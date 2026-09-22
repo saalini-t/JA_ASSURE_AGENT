@@ -193,44 +193,91 @@ class BrandedFallbackProvider(VideoProvider):
 
         persona = BRAND_PERSONAS.get(brand, BRAND_PERSONAS["jade"])
         brand_colors = {
-            "jade": (10, 40, 34),
-            "doctorshield": (10, 26, 46),
-            "jaguartransit": (36, 20, 10),
+            "jade": ((8, 28, 24), (16, 54, 46)),
+            "doctorshield": ((8, 18, 32), (14, 34, 58)),
+            "jaguartransit": ((28, 16, 8), (48, 28, 14)),
         }
-        bg = brand_colors.get(brand, (20, 20, 20))
+        top_color, bottom_color = brand_colors.get(brand, ((18, 18, 18), (32, 32, 32)))
+        accent = (212, 175, 100)  # muted gold, consistent across brands
 
         w, h = FALLBACK_CANVAS_SIZE
-        img = Image.new("RGB", (w, h), color=bg)
+        img = Image.new("RGB", (w, h), color=top_color)
         draw = ImageDraw.Draw(img)
+        self._draw_vertical_gradient(draw, w, h, top_color, bottom_color)
 
-        title_font, body_font, label_font = self._load_fonts()
+        # Thin inset frame -- gives the card an actual "designed end slate" look
+        # instead of a flat rectangle of text.
+        margin = 48
+        draw.rectangle([(margin, margin), (w - margin, h - margin)], outline=accent, width=2)
 
-        draw.text((60, int(h * 0.08)), persona["title"].upper(), font=title_font, fill=(230, 200, 120))
-        draw.text((60, int(h * 0.18)), f"Scene {scene.scene_number}", font=body_font, fill=(255, 255, 255))
+        title_font, headline_font, body_font, label_font = self._load_fonts()
 
-        wrapped = self._wrap_text(scene.visual_description, body_font, w - 120)
-        y = int(h * 0.35)
+        # Brand wordmark, centered, wrapped to fit inside the frame margins
+        # rather than overflowing off the canvas edges for longer brand names.
+        title_lines = self._wrap_text(persona["title"].upper(), title_font, w - (margin * 2) - 40)[:2]
+        ty = int(h * 0.11)
+        for line in title_lines:
+            self._draw_centered_text(draw, line, title_font, w, ty, accent)
+            ty += 54
+        divider_y = ty + 16
+        draw.line([(w // 2 - 90, divider_y), (w // 2 + 90, divider_y)], fill=accent, width=2)
+
+        # The REAL message meant for viewers is onscreen_text, not
+        # visual_description -- visual_description is an internal prompt for an
+        # AI image generator and was previously (wrongly) printed here verbatim,
+        # which is why the card read like a leaked prompt instead of a designed
+        # end slate. onscreen_text is what a human actually wrote for display.
+        display_text = (scene.onscreen_text or "").strip() or f"{persona['title']} — JA Assure"
+        wrapped = self._wrap_text(display_text, headline_font, w - 200)
+        y = h // 2 - (len(wrapped) * 56) // 2
         for line in wrapped:
-            draw.text((60, y), line, font=body_font, fill=(220, 220, 220))
-            y += 44
+            self._draw_centered_text(draw, line, headline_font, w, y, (245, 245, 240))
+            y += 56
 
-        label = "FALLBACK VISUAL -- NOT AI-GENERATED (DEMO MODE)"
-        draw.rectangle([(0, h - 90), (w, h)], fill=(120, 20, 20))
-        draw.text((30, h - 68), label, font=label_font, fill=(255, 255, 255))
+        # Statutory disclaimer, if this scene carries one -- small print, not
+        # the giant body text the description used to occupy.
+        if scene.compliance_disclaimer:
+            disclaimer_lines = self._wrap_text(scene.compliance_disclaimer, body_font, w - 240)[:4]
+            dy = int(h * 0.78)
+            for line in disclaimer_lines:
+                self._draw_centered_text(draw, line, body_font, w, dy, (200, 200, 195))
+                dy += 40
+
+        # Honest disclosure -- kept fully legible (never shrunk into
+        # unreadability), just visually integrated instead of an alarm-red bar.
+        label = "FALLBACK VISUAL — NOT AI-GENERATED (DEMO MODE)"
+        draw.rectangle([(0, h - 64), (w, h)], fill=(0, 0, 0))
+        self._draw_centered_text(draw, label, label_font, w, h - 46, accent)
 
         img.save(output_path, "PNG")
 
     @staticmethod
+    def _draw_vertical_gradient(draw: "ImageDraw.ImageDraw", w: int, h: int, top: tuple, bottom: tuple) -> None:
+        for row in range(h):
+            t = row / max(1, h - 1)
+            color = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
+            draw.line([(0, row), (w, row)], fill=color)
+
+    @staticmethod
+    def _draw_centered_text(draw: "ImageDraw.ImageDraw", text: str, font: "ImageFont.ImageFont", canvas_width: int, y: int, fill: tuple) -> None:
+        bbox = font.getbbox(text)
+        text_width = bbox[2] - bbox[0]
+        x = max(0, (canvas_width - text_width) // 2)
+        draw.text((x, y), text, font=font, fill=fill)
+
+    @staticmethod
     def _load_fonts():
         try:
-            title_font = ImageFont.truetype("arial.ttf", 54)
-            body_font = ImageFont.truetype("arial.ttf", 36)
-            label_font = ImageFont.truetype("arial.ttf", 28)
+            title_font = ImageFont.truetype("arial.ttf", 46)
+            headline_font = ImageFont.truetype("arialbd.ttf", 52)
+            body_font = ImageFont.truetype("arial.ttf", 32)
+            label_font = ImageFont.truetype("arial.ttf", 24)
         except Exception:
             title_font = ImageFont.load_default()
+            headline_font = ImageFont.load_default()
             body_font = ImageFont.load_default()
             label_font = ImageFont.load_default()
-        return title_font, body_font, label_font
+        return title_font, headline_font, body_font, label_font
 
     @staticmethod
     def _wrap_text(text: str, font: "ImageFont.ImageFont", max_width: int) -> List[str]:

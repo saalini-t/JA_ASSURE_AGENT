@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # LLM Settings (Groq API)
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "groq/compound"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     # Image Generation (OpenAI Images API) -- optional. Leave empty to use the
     # clearly-labeled branded fallback card instead of real AI-generated visuals.

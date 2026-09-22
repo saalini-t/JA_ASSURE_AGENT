@@ -41,7 +41,7 @@ that file is the authoritative source; this table is a summary).
 | `CORS_ORIGINS` | `http://localhost:5173,...` | must include your frontend's origin |
 | `DATABASE_URL` | Postgres placeholder | set to `sqlite:///./dev.db` for zero-setup local dev (see §3) |
 | `GROQ_API_KEY` | empty | the actual text-generation LLM. Blank = deterministic offline fallback mode everywhere (compliance/localization/content still work, just template-based) |
-| `GROQ_MODEL` | `groq/compound` | |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Must be a model your Groq account actually has access to — check with `client.models.list()` if you swap accounts/keys; an invalid name fails with a real `404` that silently falls back to mock content (see FINAL_SYSTEM_AUDIT.md) |
 | `IMAGE_PROVIDER` | `auto` | `auto` cascades Gemini → Hugging Face → local Stable Diffusion 1.5 → branded fallback. Or force one: `gemini`\|`openai`\|`huggingface`\|`stable_diffusion`\|`branded_fallback` |
 | `GEMINI_API_KEY` / `GEMINI_IMAGE_MODEL` | empty / `models/gemini-2.5-flash-image` | image generation only — unrelated credential from the text LLM |
 | `OPENAI_API_KEY` | empty | optional image provider, not in the default `auto` cascade |

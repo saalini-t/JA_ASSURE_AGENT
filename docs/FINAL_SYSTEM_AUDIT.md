@@ -202,6 +202,47 @@ here rather than hidden.
      image in one request, landed in `human_review`. 6 new tests, all
      media-generation calls mocked (no real GPU/network time in the test
      suite itself).
+10. **Major bug found and fixed via live testing (not caught by any mocked
+    test, since tests never touch a real Groq account)**:
+    `GROQ_MODEL=groq/compound` is not a valid model on this Groq account —
+    confirmed via a direct API call, real response
+    `404 {'error': {'message': 'The model `groq/compound` does not exist or
+    you do not have access to it.'}}`. Every single Groq call this entire
+    project (content generation, video scripting, lead discovery) was
+    silently failing and falling back to placeholder/mock content the whole
+    time, despite `/health` reporting `"llm_mode": "groq_live"` — because
+    `is_live` only checks that a client object was constructed with an API
+    key, never that the configured model actually works. Fixed to
+    `openai/gpt-oss-120b` (confirmed with a real completion call). A related
+    bug found in the same investigation: this model occasionally wraps its
+    JSON response in a one-element list instead of a bare object; fixed with
+    a defensive unwrap in `llm_provider.py` rather than letting a good
+    response get discarded as a validation failure.
+    - **Cascading effect this explains**: when the mock fallback fires for
+      `VideoScript` generation, it produces exactly one scene with every
+      field (including `compliance_disclaimer`) set to placeholder text.
+      Since this codebase correctly forces the branded fallback card for any
+      scene carrying a real disclaimer (a legal disclaimer should never be
+      an AI hallucination), the placeholder junk in that field tripped the
+      same rule on every mock scene — bypassing the entire image cascade for
+      reasons that had nothing to do with Gemini/HF/SD1.5 themselves. Root
+      cause traced end-to-end and confirmed fixed: a fresh generation after
+      the fix produced a real 5-scene video, 4 scenes genuinely from local
+      SD1.5, 1 (the actual disclaimer scene) correctly on the branded
+      fallback — verified with `ffprobe`, `volumedetect` (real audible
+      narration, all 5 scenes individually confirmed), and direct visual
+      inspection of extracted frames.
+11. **Branded fallback card redesigned.** The previous version printed
+    `scene.visual_description` (an internal prompt written *for an AI image
+    generator*, never meant for display) as the card's main body text, which
+    is why it looked like a leaked prompt rather than a designed end slate.
+    Now uses `scene.onscreen_text` (the field a human actually writes for
+    on-screen display), a vertical brand-color gradient, an inset frame, a
+    wrapped/centered brand wordmark, and the compliance disclaimer (when
+    present) in proper small print. The honest "FALLBACK VISUAL — NOT
+    AI-GENERATED" disclosure is kept fully legible, just visually integrated
+    instead of an alarm-red bar. No provider-selection or labeling logic
+    changed — still never claims AI generation for a fallback card.
 
 ---
 

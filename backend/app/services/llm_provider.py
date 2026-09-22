@@ -105,6 +105,13 @@ class LLMProvider:
                     clean_json = clean_json.strip()
 
                     data = json.loads(clean_json)
+                    # Some models occasionally wrap the requested object in a
+                    # single-element list instead of returning it bare, despite
+                    # the schema (and prompt) asking for an object -- unwrap
+                    # that one known shape rather than failing validation and
+                    # discarding a genuinely good response.
+                    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+                        data = data[0]
                     return schema.model_validate(data)
                 except Exception as e:
                     if "429" in str(e) and attempt == 0:
