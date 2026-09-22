@@ -243,6 +243,29 @@ here rather than hidden.
     AI-GENERATED" disclosure is kept fully legible, just visually integrated
     instead of an alarm-red bar. No provider-selection or labeling logic
     changed — still never claims AI generation for a fallback card.
+12. **Real governance gap found via live testing and fixed.**
+    `POST /leads/outreach/{id}/send` only checked `status == "approved"` —
+    it never checked `compliance_status == "passed"`, unlike the real
+    LinkedIn publish endpoint, which correctly uses
+    `hitl_service.is_publishable()` (both conditions). This codebase's state
+    machine deliberately allows a human to "approve" a compliance-flagged
+    draft as a sign-off that they've seen the warnings (see
+    `hitl_service.py`'s docstring) — but that was, until this fix,
+    sufficient on its own to actually **send** a flagged outreach email for
+    real. Reproduced live: created a lead with a real email, generated
+    outreach, approved it while `compliance_status` was still `"flagged"`
+    (score 60/100, "Requires remediation... before human approval"), and the
+    send endpoint accepted it and dispatched a real email anyway. Fixed to
+    use `hitl_service.is_publishable()`, the exact same two-part check the
+    LinkedIn endpoint already used correctly — one line of production code,
+    plus a new regression test
+    (`test_send_rejects_approved_but_compliance_flagged_outreach`) that
+    deterministically reproduces the exact scenario via the governed `/edit`
+    endpoint rather than depending on a live LLM's non-deterministic first
+    draft. This is the second real HITL/compliance-adjacent bug found by
+    actually exercising the system rather than by code review alone (the
+    first being the GROQ_MODEL cascade failure above) — both were invisible
+    to static review and only surfaced by live testing.
 
 ---
 

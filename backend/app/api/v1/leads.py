@@ -190,13 +190,17 @@ async def edit_lead_outreach(outreach_id: int, req: EditOutreachRequest, db: Ses
 @router.post("/outreach/{outreach_id}/send", response_model=LeadOutreachResponse)
 async def send_lead_outreach(outreach_id: int, db: Session = Depends(get_db)):
     """
-    Sends an outreach email -- but ONLY if status=="approved". This is the sole
-    gate: pending/human_review/rejected/edited-but-not-reapproved outreach is
-    rejected outright, mirroring the exact HITL discipline that guards every
-    other publishing action in this codebase. Also refuses if the lead has no
-    real, publicly-sourced email address on file (Lead.email is intentionally
-    left blank rather than fabricated -- see lead_service's discovery logic) --
-    there is nothing genuine to send to.
+    Sends an outreach email -- but ONLY if status=="approved" AND
+    compliance_status=="passed" (hitl_service.is_publishable(), the exact same
+    two-part gate the real LinkedIn publish endpoint uses). A human is allowed
+    to "approve" a compliance-flagged draft as a sign-off that they've seen the
+    warnings (see hitl_service's state machine docstring), but that alone must
+    never be enough to actually send -- both conditions are mandatory here,
+    same as everywhere else content leaves this system. pending/human_review/
+    rejected/edited-but-not-reapproved outreach is rejected outright either
+    way. Also refuses if the lead has no real, publicly-sourced email address
+    on file (Lead.email is intentionally left blank rather than fabricated --
+    see lead_service's discovery logic) -- there is nothing genuine to send to.
 
     Uses EMAIL_PROVIDER (default "mock", never sends a real email) -- see
     app.services.email_provider. Never marks send_status="sent" without a real
@@ -206,10 +210,14 @@ async def send_lead_outreach(outreach_id: int, db: Session = Depends(get_db)):
     if not outreach:
         raise HTTPException(status_code=404, detail="Outreach draft not found")
 
-    if outreach.status != "approved":
+    if not hitl_service.is_publishable(outreach.status, outreach.compliance_status):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send outreach #{outreach_id} unless status=='approved'. Current: status='{outreach.status}'.",
+            detail=(
+                f"Cannot send outreach #{outreach_id} unless status=='approved' AND "
+                f"compliance_status=='passed'. Current: status='{outreach.status}', "
+                f"compliance_status='{outreach.compliance_status}'."
+            ),
         )
 
     lead = db.get(Lead, outreach.lead_id)

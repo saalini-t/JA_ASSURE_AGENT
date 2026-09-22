@@ -131,6 +131,42 @@ def test_send_failure_is_recorded_honestly_not_as_sent(monkeypatch):
     assert "simulated provider outage" in body["send_error"]
 
 
+def test_send_rejects_approved_but_compliance_flagged_outreach():
+    """
+    Real gap found via live testing, not caught by any prior test: a human may
+    legally 'approve' a compliance-flagged draft as a sign-off that they've
+    seen the warnings (hitl_service's state machine allows approve from either
+    'human_review' or 'pending' -- see its docstring), but that alone must
+    never be enough to actually send. The send endpoint must additionally
+    require compliance_status=='passed' (hitl_service.is_publishable()),
+    exactly like the real LinkedIn publish endpoint does -- status=='approved'
+    alone was, until this fix, sufficient to send a flagged draft for real.
+    """
+    lead = _create_lead_with_email(company="Flagged Send Co")
+    res = client.post(f"/api/v1/leads/{lead['id']}/outreach/generate")
+    outreach = res.json()
+
+    # Force a compliance flag deterministically via edit (re-runs the real
+    # compliance gate on the new body) rather than depending on the live LLM's
+    # non-deterministic first draft.
+    res = client.post(
+        f"/api/v1/leads/outreach/{outreach['id']}/edit",
+        json={"edited_body": "100% guaranteed payout, the cheapest and best insurer in Singapore, no exceptions."},
+    )
+    edited = res.json()
+    assert edited["compliance_status"] == "flagged", edited
+    assert edited["status"] == "human_review"
+
+    res = client.post(f"/api/v1/leads/outreach/{outreach['id']}/approve")
+    approved = res.json()
+    assert approved["status"] == "approved"
+    assert approved["compliance_status"] == "flagged"  # approval never launders a flag into a pass
+
+    res = client.post(f"/api/v1/leads/outreach/{outreach['id']}/send")
+    assert res.status_code == 400, res.text
+    assert "compliance_status" in res.json()["detail"]
+
+
 def test_send_404s_for_missing_outreach():
     res = client.post("/api/v1/leads/outreach/999999/send")
     assert res.status_code == 404
