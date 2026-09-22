@@ -13,6 +13,7 @@ from app.schemas.agent_contracts import (
     LessonLearned,
     LeadProspect,
     PublishingSchedule,
+    LeadScoringBreakdown,
 )
 
 # ----------------- Content Queue DTOs -----------------
@@ -89,7 +90,6 @@ class CompetitorBase(BaseModel):
     actionable_recommendation: Optional[str] = None
     relevance: float = 0.5
     source: str = "public_web"
-    source_type: Optional[str] = None
 
 class CompetitorCreate(CompetitorBase):
     pass
@@ -97,8 +97,48 @@ class CompetitorCreate(CompetitorBase):
 class CompetitorResponse(CompetitorBase):
     id: int
     collected_at: datetime
+    # Computed read-only property on the Competitor model (derived from `source`) --
+    # deliberately absent from CompetitorBase/Create: passing it through to the
+    # SQLAlchemy constructor crashes, since the model has no setter for it.
+    source_type: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CompetitorSnapshotResponse(BaseModel):
+    id: int
+    competitor_id: int
+    source_url: Optional[str] = None
+    source_type: str
+    title: str
+    summary: str
+    detected_change: Optional[str] = None
+    actionable_recommendation: Optional[str] = None
+    captured_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CompetitorDigestEntry(BaseModel):
+    """
+    One digest entry per requirement: competitor, what changed, source, previous
+    state, current state, detected date, why it matters, suggested action. Never
+    presents speculation as fact -- has_change is a factual text-diff result, not
+    an AI judgment call about business significance.
+    """
+    competitor_id: int
+    competitor_name: str
+    category: str
+    source_url: Optional[str] = None
+    source_type: str
+    has_change: bool
+    changed_fields: List[str] = Field(default_factory=list)
+    previous_state: Optional[Dict[str, Any]] = None
+    current_state: Dict[str, Any]
+    detected_at: datetime
+    why_it_matters: Optional[str] = None
+    suggested_action: Optional[str] = None
+    note: Optional[str] = None  # e.g. "baseline snapshot -- no prior snapshot to compare"
 
 # ----------------- Lead DTOs -----------------
 class LeadBase(BaseModel):
@@ -113,7 +153,6 @@ class LeadBase(BaseModel):
     recommended_brand: Optional[str] = None
     outreach_draft: Optional[str] = None
     source: Optional[str] = "prospecting"
-    source_type: Optional[str] = None
     status: str = "new"
 
 class LeadCreate(LeadBase):
@@ -122,8 +161,55 @@ class LeadCreate(LeadBase):
 class LeadResponse(LeadBase):
     id: int
     created_at: datetime
+    # Computed read-only property on the Lead model (derived from `source`) --
+    # deliberately absent from LeadBase/Create: same bug class as Competitor's
+    # source_type (passing it through to the SQLAlchemy constructor crashes,
+    # since the model has no setter for it).
+    source_type: Optional[str] = None
+    # Real 5-factor breakdown from the last score calculation -- None (never
+    # approximated) for leads created before this field existed or via the
+    # plain manual-create endpoint, which has no scoring pass to draw from.
+    scoring_breakdown: Optional[LeadScoringBreakdown] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ----------------- Lead Outreach DTOs (governed by compliance + HITL) -----------------
+class LeadOutreachResponse(BaseModel):
+    id: int
+    lead_id: int
+    product: str
+    subject: str
+    body: str
+    original_body: Optional[str] = None
+    personalization_points: List[str] = Field(default_factory=list)
+    source_evidence: List[str] = Field(default_factory=list)
+    compliance_status: str
+    status: str
+    compliance_score: float
+    reason_tag: Optional[str] = None
+    notes: Optional[str] = None
+    send_status: str = "draft"
+    send_error: Optional[str] = None
+    sent_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_orm_with_json(cls, obj) -> "LeadOutreachResponse":
+        import json
+        return cls(
+            id=obj.id, lead_id=obj.lead_id, product=obj.product, subject=obj.subject, body=obj.body,
+            original_body=obj.original_body,
+            personalization_points=json.loads(obj.personalization_points) if obj.personalization_points else [],
+            source_evidence=json.loads(obj.source_evidence) if obj.source_evidence else [],
+            compliance_status=obj.compliance_status, status=obj.status, compliance_score=obj.compliance_score,
+            reason_tag=obj.reason_tag, notes=obj.notes,
+            send_status=obj.send_status, send_error=obj.send_error, sent_at=obj.sent_at,
+            created_at=obj.created_at, updated_at=obj.updated_at,
+        )
 
 # ----------------- Feedback DTOs -----------------
 class FeedbackCreate(BaseModel):
@@ -199,6 +285,7 @@ class DashboardSummary(BaseModel):
 class PublishingRecordBase(BaseModel):
     content_id: int
     platform: str
+    attempt: int = 1
     external_post_id: Optional[str] = None
     status: str = "scheduled"
     scheduled_at: Optional[datetime] = None

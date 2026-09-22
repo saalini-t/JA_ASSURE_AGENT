@@ -1,7 +1,10 @@
 import type {
   ContentQueueItem,
   Competitor,
+  CompetitorSnapshot,
+  CompetitorDigestEntry,
   Lead,
+  LeadOutreach,
   Feedback,
   LessonLearned,
   DashboardSummary,
@@ -9,7 +12,11 @@ import type {
   GeneratedVariation,
   VideoScript,
   ComplianceResult,
-  PublishingRecord
+  PublishingRecord,
+  ReviewDecisionItem,
+  VoiceGenerationResponse,
+  EngagementMetric,
+  WorkerRunResult
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
@@ -17,6 +24,14 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/
 // Server origin (no /api/v1 suffix) for fetching static assets like generated videos,
 // e.g. `${API_ORIGIN}/media/generated/{job_id}/final.mp4`.
 export const API_ORIGIN = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+
+// Convenience wrapper for turning any relative /media/... path (video, audio, srt)
+// into a fully-qualified URL. Passes absolute URLs through unchanged.
+export const getMediaUrl = (path?: string): string => {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
+};
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -93,6 +108,11 @@ export const api = {
     return handleResponse<ContentQueueItem>(res);
   },
 
+  getReviewHistory: async (id: number): Promise<ReviewDecisionItem[]> => {
+    const res = await fetch(`${API_BASE_URL}/queue/${id}/history`);
+    return handleResponse<ReviewDecisionItem[]>(res);
+  },
+
   // Content Generation
   generateVariations: async (payload: {
     brand: string;
@@ -144,6 +164,29 @@ export const api = {
     return handleResponse<VideoScript>(res);
   },
 
+  enqueueVideo: async (script: VideoScript): Promise<ContentQueueItem> => {
+    const res = await fetch(`${API_BASE_URL}/content/video/enqueue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(script),
+    });
+    return handleResponse<ContentQueueItem>(res);
+  },
+
+  // Voice & TTS
+  generateVoiceover: async (script: VideoScript, languageOverride?: string): Promise<VoiceGenerationResponse> => {
+    let url = `${API_BASE_URL}/content/voice`;
+    if (languageOverride) {
+      url += `?language_override=${encodeURIComponent(languageOverride)}`;
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(script),
+    });
+    return handleResponse<VoiceGenerationResponse>(res);
+  },
+
   // Compliance
   checkCompliance: async (payload: { brand: string; content_text: string; content_type?: string }): Promise<ComplianceResult> => {
     const res = await fetch(`${API_BASE_URL}/compliance/check`, {
@@ -158,6 +201,21 @@ export const api = {
   getCompetitors: async (): Promise<Competitor[]> => {
     const res = await fetch(`${API_BASE_URL}/competitors`);
     return handleResponse<Competitor[]>(res);
+  },
+
+  getCompetitorDigests: async (): Promise<CompetitorDigestEntry[]> => {
+    const res = await fetch(`${API_BASE_URL}/competitors/digest`);
+    return handleResponse<CompetitorDigestEntry[]>(res);
+  },
+
+  getCompetitorDigest: async (competitorId: number): Promise<CompetitorDigestEntry> => {
+    const res = await fetch(`${API_BASE_URL}/competitors/${competitorId}/digest`);
+    return handleResponse<CompetitorDigestEntry>(res);
+  },
+
+  getCompetitorSnapshots: async (competitorId: number): Promise<CompetitorSnapshot[]> => {
+    const res = await fetch(`${API_BASE_URL}/competitors/${competitorId}/snapshots`);
+    return handleResponse<CompetitorSnapshot[]>(res);
   },
 
   runResearch: async (payload: { brand: string; topic: string; competitor_url?: string }): Promise<any> => {
@@ -220,9 +278,50 @@ export const api = {
     return handleResponse<Lead>(res);
   },
 
-  generateLeadOutreach: async (leadId: number): Promise<any> => {
-    const res = await fetch(`${API_BASE_URL}/leads/${leadId}/outreach`, { method: 'POST' });
-    return handleResponse<any>(res);
+  // Governed lead outreach (compliance-checked, HITL-gated -- replaces the
+  // legacy plain-string POST /leads/{id}/outreach, which bypasses compliance).
+  generateStructuredOutreach: async (leadId: number): Promise<LeadOutreach> => {
+    const res = await fetch(`${API_BASE_URL}/leads/${leadId}/outreach/generate`, { method: 'POST' });
+    return handleResponse<LeadOutreach>(res);
+  },
+
+  getLeadOutreachList: async (leadId: number): Promise<LeadOutreach[]> => {
+    const res = await fetch(`${API_BASE_URL}/leads/${leadId}/outreach`);
+    return handleResponse<LeadOutreach[]>(res);
+  },
+
+  getOutreach: async (outreachId: number): Promise<LeadOutreach> => {
+    const res = await fetch(`${API_BASE_URL}/leads/outreach/${outreachId}`);
+    return handleResponse<LeadOutreach>(res);
+  },
+
+  approveOutreach: async (outreachId: number, reviewer?: string): Promise<LeadOutreach> => {
+    const query = reviewer ? `?reviewer=${encodeURIComponent(reviewer)}` : '';
+    const res = await fetch(`${API_BASE_URL}/leads/outreach/${outreachId}/approve${query}`, { method: 'POST' });
+    return handleResponse<LeadOutreach>(res);
+  },
+
+  rejectOutreach: async (outreachId: number, reasonTag: string, notes: string): Promise<LeadOutreach> => {
+    const res = await fetch(`${API_BASE_URL}/leads/outreach/${outreachId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason_tag: reasonTag, notes }),
+    });
+    return handleResponse<LeadOutreach>(res);
+  },
+
+  editOutreach: async (outreachId: number, editedBody: string, editedSubject?: string): Promise<LeadOutreach> => {
+    const res = await fetch(`${API_BASE_URL}/leads/outreach/${outreachId}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edited_body: editedBody, edited_subject: editedSubject }),
+    });
+    return handleResponse<LeadOutreach>(res);
+  },
+
+  sendOutreach: async (outreachId: number): Promise<LeadOutreach> => {
+    const res = await fetch(`${API_BASE_URL}/leads/outreach/${outreachId}/send`, { method: 'POST' });
+    return handleResponse<LeadOutreach>(res);
   },
 
   // Lessons Learned & Feedback
@@ -266,5 +365,41 @@ export const api = {
       method: 'PATCH',
     });
     return handleResponse<PublishingRecord>(res);
+  },
+
+  // Publishing (Real LinkedIn Dispatch -- Project 2 "The Hands")
+  publishToLinkedIn: async (contentId: number): Promise<PublishingRecord> => {
+    const res = await fetch(`${API_BASE_URL}/publishing/${contentId}/linkedin`, { method: 'POST' });
+    return handleResponse<PublishingRecord>(res);
+  },
+
+  refreshEngagementAnalytics: async (recordId: number): Promise<PublishingRecord> => {
+    const res = await fetch(`${API_BASE_URL}/publishing/${recordId}/analytics/refresh`, { method: 'POST' });
+    return handleResponse<PublishingRecord>(res);
+  },
+
+  runWorkerOnce: async (maxItems?: number): Promise<WorkerRunResult> => {
+    const query = maxItems ? `?max_items=${maxItems}` : '';
+    const res = await fetch(`${API_BASE_URL}/publishing/worker/run-once${query}`, { method: 'POST' });
+    return handleResponse<WorkerRunResult>(res);
+  },
+
+  getEngagementMetrics: async (params?: { platform?: string; brand?: string; limit?: number }): Promise<EngagementMetric[]> => {
+    const query = new URLSearchParams();
+    if (params?.platform) query.append('platform', params.platform);
+    if (params?.brand) query.append('brand', params.brand);
+    if (params?.limit) query.append('limit', String(params.limit));
+    const res = await fetch(`${API_BASE_URL}/analytics/engagement?${query.toString()}`);
+    return handleResponse<EngagementMetric[]>(res);
+  },
+
+  // LinkedIn OAuth (member posting) -- status only, never exposes the token itself.
+  getLinkedInAuthStatus: async (): Promise<{ oauth_configured: boolean; connected: boolean }> => {
+    const res = await fetch(`${API_BASE_URL}/auth/linkedin/status`);
+    return handleResponse<{ oauth_configured: boolean; connected: boolean }>(res);
   }
 };
+
+// Full-page redirect (not a fetch) -- LinkedIn's own consent screen must load in
+// the top-level browser tab, then LinkedIn redirects back to the backend's callback.
+export const linkedInLoginUrl = `${API_ORIGIN}/api/v1/auth/linkedin/login`;

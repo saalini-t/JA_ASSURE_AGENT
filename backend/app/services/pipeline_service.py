@@ -92,7 +92,9 @@ class PipelineService:
                 compliance = await compliance_service.evaluate_content(
                     brand=brand_clean,
                     content_text=content_text,
-                    content_type=content_type
+                    content_type=content_type,
+                    platform=platform_clean,
+                    language=lang_clean
                 )
 
                 # Step 6: Queue Contract
@@ -107,9 +109,16 @@ class PipelineService:
                     "hashtags": var.hashtags,
                     "cta": var.cta,
                     "media_prompt": var.media_prompt,
+                    "compliance_status": compliance.status,
+                    "compliance_score": compliance.score,
+                    "compliance_jurisdiction": compliance.jurisdiction,
+                    "compliance_product": compliance.product,
+                    "compliance_disclaimer_status": compliance.disclaimer_status,
                     "compliance_violations": [v.model_dump() for v in compliance.violations],
+                    "compliance_warnings": [w.model_dump() for w in compliance.warnings],
                     "compliance_suggestions": compliance.suggestions,
                     "disclaimers_required": compliance.disclaimers_required,
+                    "claims_analyzed": [c.model_dump() for c in compliance.claims_analyzed],
                     "applied_lessons_count": len(lessons),
                     "pipeline_timestamp": datetime.now(timezone.utc).isoformat()
                 }

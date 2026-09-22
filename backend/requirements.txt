@@ -12,3 +12,12 @@ pytest>=8.0.0
 python-multipart>=0.0.9
 pillow>=10.2.0
 huggingface_hub>=0.26.0
+google-genai>=1.0.0
+gTTS>=2.5.0
+mutagen>=1.47.0
+
+# Stable Diffusion 1.5 (local image provider) is NOT listed here on purpose --
+# `diffusers` and `torch` are large, GPU-oriented packages not needed by the rest
+# of the app, and the test suite never requires them. Install separately only if
+# you want this provider active: see README section 8b, "Stable Diffusion 1.5
+# (Local) Setup", for the exact pip command matching your machine (CPU vs CUDA).

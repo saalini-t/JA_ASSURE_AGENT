@@ -42,9 +42,79 @@ class Settings(BaseSettings):
     HF_TOKEN: str = ""
     HF_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-dev"
 
+    # Image Generation (Google Gemini) -- PRIMARY AI visual provider for video scene
+    # visuals (see video_providers.GeminiImageProvider). Doesn't depend on OpenAI
+    # Images API quota or Hugging Face Inference Provider credits. Leave blank to
+    # fall through to OpenAI/Hugging Face/branded fallback. Get a key at
+    # https://aistudio.google.com/apikey
+    GEMINI_API_KEY: str = ""
+    GEMINI_IMAGE_MODEL: str = "models/gemini-2.5-flash-image"
+
+    # Stable Diffusion 1.5 (local, third-tier fallback provider -- see README's
+    # "Stable Diffusion 1.5 (Local) Setup" section). No API key needed; requires
+    # `pip install diffusers torch` (not installed by default -- see README) and,
+    # on first real use, downloads model weights from Hugging Face Hub unless
+    # SD15_MODEL_PATH already points to a locally-downloaded directory. Never
+    # loaded/downloaded at application startup -- only lazily on first real use.
+    SD15_MODEL_PATH: str = "runwayml/stable-diffusion-v1-5"
+    SD15_DEVICE: str = "auto"  # "auto" | "cuda" | "cpu"
+    SD15_LOW_VRAM: bool = False  # attention slicing + sequential CPU offload on CUDA
+    SD15_NUM_INFERENCE_STEPS: int = 25
+    SD15_GUIDANCE_SCALE: float = 7.5
+    SD15_WIDTH: int = 512
+    SD15_HEIGHT: int = 768
+    SD15_SEED: int = -1  # -1 = a new random seed every generation
+
     # Which image provider video_generation_service should use for scene visuals:
-    # "openai" (default) | "huggingface" | "branded_fallback" (explicit, no API call)
-    IMAGE_PROVIDER: str = "openai"
+    # "auto" (default) cascades Gemini -> Hugging Face -> Stable Diffusion 1.5
+    # (local) -> branded fallback, stopping at the first real success. Set to one
+    # specific value ("gemini" | "openai" | "huggingface" | "stable_diffusion" |
+    # "branded_fallback") to force that single provider only (no cascade).
+    IMAGE_PROVIDER: str = "auto"
+
+    # LinkedIn publishing (The Hands) -- optional. A long-lived OAuth 2.0 access token
+    # obtained externally (no in-app OAuth flow yet); leave blank to keep LinkedIn
+    # publishing explicitly unconfigured (publish attempts fail honestly, never fake
+    # success). LINKEDIN_ORGANIZATION_ID is optional -- when blank, posts publish under
+    # the authenticated member's own profile instead of a company page.
+    LINKEDIN_ACCESS_TOKEN: str = ""
+    LINKEDIN_ORGANIZATION_ID: str = ""
+
+    # In-app LinkedIn OAuth flow (member posting, w_member_social scope) -- an
+    # alternative to pasting a token in manually above. All three are required to
+    # use GET /api/v1/auth/linkedin/login; leave blank to keep using a manually
+    # obtained LINKEDIN_ACCESS_TOKEN instead. Get these from a LinkedIn Developer
+    # Portal app (https://www.linkedin.com/developers/apps) under Auth settings.
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/linkedin/callback"
+
+    # Automatic background publishing worker (Project 2 / "The Hands"). SAFE
+    # DEFAULT IS DISABLED -- starting the app never begins automatic publishing
+    # unless this is explicitly set to true. When enabled, polls at
+    # PUBLISH_WORKER_INTERVAL_SECONDS and publishes through the exact same gated
+    # publishing_service.publish_to_linkedin() the manual trigger endpoint uses --
+    # human approval (status=="approved" AND compliance_status=="passed") remains
+    # absolute regardless of this setting.
+    PUBLISH_WORKER_ENABLED: bool = False
+    PUBLISH_WORKER_INTERVAL_SECONDS: int = 60
+
+    # Email outreach sending (optional). "mock" (default) never sends a real email
+    # -- it logs and returns a clearly-labeled mock result, safe for demos/tests.
+    # Set to "smtp" and configure SMTP_HOST/PORT/USERNAME/PASSWORD/EMAIL_FROM to
+    # send real email via any standard SMTP provider (Gmail, SendGrid SMTP relay,
+    # Resend SMTP, etc.) -- only ever for LeadOutreach rows with status=="approved".
+    EMAIL_PROVIDER: str = "mock"
+    EMAIL_FROM: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+
+    # Narration-duration budgeting (video pipeline) -- documented average speaking
+    # pace assumed for word-count-based narration duration estimates. Typical cited
+    # range for a measured, professional voiceover read is ~130-160 wpm.
+    NARRATION_WORDS_PER_MINUTE: float = 150.0
 
     # Logging
     LOG_LEVEL: str = "INFO"

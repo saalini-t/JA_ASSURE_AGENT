@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import httpx
 from app.schemas.agent_contracts import CompetitorInsight, ResearchInsight, ResearchFinding
-from app.models.entities import Competitor
+from app.models.entities import Competitor, CompetitorSnapshot
 from app.database.session import SessionLocal
 from app.services.llm_provider import llm_provider
 
@@ -472,34 +472,56 @@ class ResearchService:
             category_map = {"jade": "jewellery", "doctorshield": "medical", "jaguartransit": "transit"}
             category = category_map.get(brand, finding.category or "general")
 
+            title = finding.title
+            summary = finding.summary[:500]
+            detected_change = finding.positioning or ", ".join(finding.notable_claims)[:500]
+            recommendation = finding.counter_positioning
+
             existing = db.query(Competitor).filter(Competitor.url == url).first()
             if existing:
                 existing.name = finding.company or existing.name
-                existing.title = finding.title
-                existing.summary = finding.summary[:500]
-                existing.detected_change = finding.positioning or ", ".join(finding.notable_claims)[:500]
-                existing.actionable_recommendation = finding.counter_positioning
+                existing.title = title
+                existing.summary = summary
+                existing.detected_change = detected_change
+                existing.actionable_recommendation = recommendation
                 existing.relevance = finding.confidence
                 existing.source = "VERIFIED_SOURCE"
                 existing.collected_at = datetime.now(timezone.utc)
                 db.commit()
+                competitor_id = existing.id
                 logger.info(f"Updated verified competitor record: {existing.name} ({url})")
             else:
                 new_comp = Competitor(
                     name=finding.company or re.sub(r"^https?://(www\.)?", "", url).split("/")[0],
                     url=url,
                     category=category,
-                    title=finding.title,
-                    summary=finding.summary[:500],
-                    detected_change=finding.positioning or ", ".join(finding.notable_claims)[:500],
-                    actionable_recommendation=finding.counter_positioning,
+                    title=title,
+                    summary=summary,
+                    detected_change=detected_change,
+                    actionable_recommendation=recommendation,
                     relevance=finding.confidence,
                     source="VERIFIED_SOURCE",
                     collected_at=datetime.now(timezone.utc)
                 )
                 db.add(new_comp)
                 db.commit()
+                db.refresh(new_comp)
+                competitor_id = new_comp.id
                 logger.info(f"Saved new verified competitor record: {new_comp.name} ({url})")
+
+            # Immutable history row -- see CompetitorSnapshot docstring. Written on
+            # every research/analysis run (not just new competitors) so change
+            # detection has something to compare against later.
+            db.add(CompetitorSnapshot(
+                competitor_id=competitor_id,
+                source_url=url,
+                source_type="VERIFIED_SOURCE",
+                title=title,
+                summary=summary,
+                detected_change=detected_change,
+                actionable_recommendation=recommendation,
+            ))
+            db.commit()
         except Exception as e:
             db.rollback()
             logger.error(f"Failed to upsert competitor: {e}")
@@ -551,5 +573,86 @@ class ResearchService:
             return [f"General market trend: Growing demand for specialized {brand.title()} coverage across Southeast Asia."]
         finally:
             db.close()
+
+    def _build_digest_entry(self, competitor: Competitor, snapshots: List[CompetitorSnapshot]):
+        """
+        Compares the two most recent snapshots (if they exist) and reports a factual
+        text-diff of which fields changed -- never presents speculation as fact:
+        has_change is a mechanical comparison result, not an AI judgment about
+        business significance, and why_it_matters/suggested_action are only
+        populated when a real change was detected.
+        """
+        from app.schemas.dtos import CompetitorDigestEntry
+
+        if not snapshots:
+            current_state = {
+                "title": competitor.title, "summary": competitor.summary,
+                "detected_change": competitor.detected_change,
+                "actionable_recommendation": competitor.actionable_recommendation,
+            }
+            return CompetitorDigestEntry(
+                competitor_id=competitor.id, competitor_name=competitor.name, category=competitor.category,
+                source_url=competitor.url, source_type=competitor.source_type,
+                has_change=False, changed_fields=[], previous_state=None, current_state=current_state,
+                detected_at=competitor.collected_at,
+                note="No research snapshot exists yet for this competitor -- run research/analyze-url first.",
+            )
+
+        current = snapshots[-1]
+        current_state = {
+            "title": current.title, "summary": current.summary,
+            "detected_change": current.detected_change,
+            "actionable_recommendation": current.actionable_recommendation,
+        }
+
+        if len(snapshots) < 2:
+            return CompetitorDigestEntry(
+                competitor_id=competitor.id, competitor_name=competitor.name, category=competitor.category,
+                source_url=current.source_url, source_type=current.source_type,
+                has_change=False, changed_fields=[], previous_state=None, current_state=current_state,
+                detected_at=current.captured_at,
+                suggested_action=current.actionable_recommendation,
+                note="Baseline snapshot -- no prior snapshot exists yet to compare against.",
+            )
+
+        previous = snapshots[-2]
+        previous_state = {
+            "title": previous.title, "summary": previous.summary,
+            "detected_change": previous.detected_change,
+            "actionable_recommendation": previous.actionable_recommendation,
+        }
+        changed_fields = [k for k in current_state if current_state[k] != previous_state[k]]
+        has_change = len(changed_fields) > 0
+
+        return CompetitorDigestEntry(
+            competitor_id=competitor.id, competitor_name=competitor.name, category=competitor.category,
+            source_url=current.source_url, source_type=current.source_type,
+            has_change=has_change, changed_fields=changed_fields,
+            previous_state=previous_state, current_state=current_state,
+            detected_at=current.captured_at,
+            why_it_matters=current.detected_change if has_change else None,
+            suggested_action=current.actionable_recommendation if has_change else None,
+            note=None if has_change else "No textual change detected since the previous snapshot.",
+        )
+
+    def get_competitor_digest(self, competitor_id: int):
+        db = SessionLocal()
+        try:
+            competitor = db.get(Competitor, competitor_id)
+            if not competitor:
+                raise ValueError(f"Competitor #{competitor_id} not found")
+            snapshots = list(competitor.snapshots)
+            return self._build_digest_entry(competitor, snapshots)
+        finally:
+            db.close()
+
+    def get_all_digests(self) -> List[Any]:
+        db = SessionLocal()
+        try:
+            competitors = db.query(Competitor).all()
+            return [self._build_digest_entry(c, list(c.snapshots)) for c in competitors]
+        finally:
+            db.close()
+
 
 research_service = ResearchService()

@@ -1,13 +1,17 @@
-import React from 'react';
-import { 
-  Search, 
-  Globe, 
-  ExternalLink, 
-  Sparkles, 
+import React, { useEffect, useState } from 'react';
+import {
+  Search,
+  Globe,
+  ExternalLink,
+  Sparkles,
   Lightbulb,
-  Crosshair
+  History,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import type { Competitor } from '../../types';
+import type { Competitor, CompetitorDigestEntry, CompetitorSnapshot } from '../../types';
+import { api } from '../../services/api';
 
 interface CompetitorIntelViewProps {
   competitors: Competitor[];
@@ -36,27 +40,45 @@ export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
 }) => {
   const isScraping = actionLoading === 'scraping';
 
-  // Whitespace opportunities aggregated from competitors
-  const whitespaceOpportunities = [
-    {
-      brand: 'jade',
-      title: 'Bespoke Worldwide Valuation Guarantee',
-      opportunity: 'Competitors enforce rigid regional sub-limits. JA Assure Jade can counter-position with agreed-value appraisal guarantees without depreciation clawbacks.',
-      confidence: '94% Confidence'
-    },
-    {
-      brand: 'doctorshield',
-      title: '24/7 Medico-Legal Pre-Claim Concierge',
-      opportunity: 'Traditional insurers only step in after formal writ of summons. DoctorShield differentiates with immediate clinical risk advisory upon adverse patient outcome.',
-      confidence: '91% Confidence'
-    },
-    {
-      brand: 'jaguartransit',
-      title: 'Real-Time Telematics & Armored Chain-of-Custody',
-      opportunity: 'General marine cargo policies exclude high-value gem parcels in transit. Jaguar Transit offers insured vault-to-aircraft custody telemetry.',
-      confidence: '96% Confidence'
+  const [digests, setDigests] = useState<CompetitorDigestEntry[]>([]);
+  const [digestsLoading, setDigestsLoading] = useState(false);
+  const [digestsError, setDigestsError] = useState<string | null>(null);
+  const [expandedSnapshotsFor, setExpandedSnapshotsFor] = useState<number | null>(null);
+  const [snapshotsByCompetitor, setSnapshotsByCompetitor] = useState<Record<number, CompetitorSnapshot[]>>({});
+
+  const loadDigests = async () => {
+    setDigestsLoading(true);
+    setDigestsError(null);
+    try {
+      const result = await api.getCompetitorDigests();
+      setDigests(result);
+    } catch (err: any) {
+      setDigestsError(err.message || 'Failed to load competitor change digest.');
+    } finally {
+      setDigestsLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    loadDigests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competitors.length]);
+
+  const toggleSnapshots = async (competitorId: number) => {
+    if (expandedSnapshotsFor === competitorId) {
+      setExpandedSnapshotsFor(null);
+      return;
+    }
+    setExpandedSnapshotsFor(competitorId);
+    if (!snapshotsByCompetitor[competitorId]) {
+      try {
+        const snaps = await api.getCompetitorSnapshots(competitorId);
+        setSnapshotsByCompetitor((prev) => ({ ...prev, [competitorId]: snaps }));
+      } catch {
+        setSnapshotsByCompetitor((prev) => ({ ...prev, [competitorId]: [] }));
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -131,7 +153,7 @@ export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
         )}
       </div>
 
-      {/* Market Whitespace Opportunities Section */}
+      {/* Competitor Change Digest -- real snapshot-vs-snapshot diffs, never fabricated */}
       <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
           <div className="flex items-center gap-2.5">
@@ -140,38 +162,63 @@ export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
             </div>
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                Strategic Market Whitespace Analysis
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                  AI-Identified Gaps
-                </span>
+                Competitor Change Digest
               </h3>
               <p className="text-[11px] text-slate-400">
-                Identified underwriting and messaging gaps where JA Assure holds competitive differentiation
+                Detected differences between this competitor's most recent two research snapshots -- factual, sourced, never invented
               </p>
             </div>
           </div>
+          <button
+            onClick={loadDigests}
+            disabled={digestsLoading}
+            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 cursor-pointer transition-colors"
+            title="Refresh digest"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${digestsLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {whitespaceOpportunities.map((opp) => (
-            <div key={opp.title} className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5 flex flex-col justify-between">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  {getBrandBadge(opp.brand)}
-                  <span className="text-[10px] font-mono font-semibold text-emerald-400">{opp.confidence}</span>
+        {digestsError ? (
+          <div className="text-center py-6 text-xs text-rose-400">{digestsError}</div>
+        ) : digests.length === 0 ? (
+          <div className="text-center py-8 text-xs text-slate-500">
+            No digest entries yet. Run research on a competitor at least twice to detect real changes over time.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {digests.map((d) => (
+              <div key={d.competitor_id} className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5 flex flex-col justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-slate-200">{d.competitor_name}</h4>
+                    {d.has_change ? (
+                      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">Change Detected</span>
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-500 border border-slate-700">No Change</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-mono capitalize">{d.category} • {d.source_type}</p>
+                  {d.note && <p className="text-[11px] text-slate-500 italic">{d.note}</p>}
+                  {d.changed_fields.length > 0 && (
+                    <p className="text-[11px] text-slate-400 font-mono">Changed: {d.changed_fields.join(', ')}</p>
+                  )}
+                  {d.why_it_matters && (
+                    <p className="text-[11px] text-slate-300 leading-relaxed font-sans">{d.why_it_matters}</p>
+                  )}
+                  {d.suggested_action && (
+                    <p className="text-[11px] text-amber-200/90 leading-relaxed border-t border-slate-800/80 pt-1.5 mt-1.5">
+                      <span className="font-bold text-amber-400">Suggested action: </span>{d.suggested_action}
+                    </p>
+                  )}
                 </div>
-                <h4 className="font-bold text-xs text-slate-200">{opp.title}</h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">{opp.opportunity}</p>
+                <div className="pt-2 border-t border-slate-800/80 text-[10px] font-mono text-slate-500">
+                  Detected: {d.detected_at ? new Date(d.detected_at).toLocaleString() : '—'}
+                </div>
               </div>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-cyan-400">
-                <span className="flex items-center gap-1">
-                  <Crosshair className="w-3 h-3" /> Counter-Angle Armed
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Competitor Cards Grid */}
@@ -242,6 +289,34 @@ export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
                 <span>Source: {c.source || 'Scraped Portal'}</span>
                 <span>Collected: {c.collected_at ? new Date(c.collected_at).toLocaleDateString() : 'Active'}</span>
               </div>
+
+              <button
+                onClick={() => toggleSnapshots(c.id)}
+                className="w-full flex items-center justify-center gap-1.5 text-[10px] font-mono text-slate-500 hover:text-slate-300 pt-1 cursor-pointer"
+              >
+                <History className="w-3 h-3" />
+                Snapshot History
+                {expandedSnapshotsFor === c.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+
+              {expandedSnapshotsFor === c.id && (
+                <div className="space-y-2 pt-1 border-t border-slate-800/60">
+                  {(snapshotsByCompetitor[c.id] || []).length === 0 ? (
+                    <p className="text-[11px] text-slate-500 text-center py-2">No snapshots recorded for this competitor yet.</p>
+                  ) : (
+                    snapshotsByCompetitor[c.id].map((s) => (
+                      <div key={s.id} className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                          <span>{s.source_type}</span>
+                          <span>{s.captured_at ? new Date(s.captured_at).toLocaleString() : '—'}</span>
+                        </div>
+                        <p className="text-slate-300 font-semibold">{s.title}</p>
+                        <p className="text-slate-400 leading-relaxed">{s.summary}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

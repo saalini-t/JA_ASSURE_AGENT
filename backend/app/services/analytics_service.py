@@ -1,14 +1,73 @@
+import json
+import logging
 from collections import Counter
 from typing import Dict, Any
 from sqlalchemy import select, func
-from app.models.entities import ContentQueue, Lead, LessonLearned, Feedback
+from app.models.entities import ContentQueue, Lead, LessonLearned, Feedback, Analytics, PublishingRecord
 from app.database.session import SessionLocal
 from app.schemas.dtos import DashboardSummary
+from app.services import linkedin_client
+from app.services.linkedin_client import LinkedInError
+
+logger = logging.getLogger("ja_assure.analytics")
 
 class AnalyticsService:
     """
     Real-time KPI aggregation and closed-loop learning metrics engine.
     """
+
+    async def refresh_linkedin_engagement(self, record_id: int) -> PublishingRecord:
+        """
+        Attempts a REAL LinkedIn engagement fetch for a published post. Never
+        fabricates numbers: on any failure (most commonly a permission error --
+        publish-only OAuth scopes don't include read access to social actions),
+        stores an honest {"source": "unavailable", "reason": ...} payload rather
+        than inventing likes/comments. Only writes an Analytics KPI row on genuine
+        success, so the aggregate dashboard is never contaminated by a fake zero.
+        """
+        db = SessionLocal()
+        try:
+            record = db.get(PublishingRecord, record_id)
+            if not record:
+                raise ValueError(f"Publishing record #{record_id} not found")
+            if record.status != "published" or not record.external_post_id:
+                payload = {"source": "unavailable", "reason": "Content has not been published yet."}
+                record.engagement_metrics = json.dumps(payload)
+                db.commit()
+                db.refresh(record)
+                return record
+
+            try:
+                engagement = await linkedin_client.get_post_engagement(record.external_post_id)
+                record.engagement_metrics = json.dumps(engagement)
+
+                content = db.get(ContentQueue, record.content_id)
+                db.add(Analytics(
+                    metric_name="linkedin_likes",
+                    brand=content.brand if content else None,
+                    platform="linkedin",
+                    metric_value=float(engagement.get("likes", 0)),
+                    metadata_json=json.dumps({"post_urn": record.external_post_id}),
+                ))
+                db.add(Analytics(
+                    metric_name="linkedin_comments",
+                    brand=content.brand if content else None,
+                    platform="linkedin",
+                    metric_value=float(engagement.get("comments", 0)),
+                    metadata_json=json.dumps({"post_urn": record.external_post_id}),
+                ))
+            except LinkedInError as e:
+                logger.warning(f"LinkedIn engagement fetch failed for record #{record_id}: {e.message}")
+                record.engagement_metrics = json.dumps({"source": "unavailable", "reason": e.message})
+            except Exception as e:
+                logger.warning(f"LinkedIn engagement fetch failed unexpectedly for record #{record_id}: {e}")
+                record.engagement_metrics = json.dumps({"source": "unavailable", "reason": str(e)})
+
+            db.commit()
+            db.refresh(record)
+            return record
+        finally:
+            db.close()
 
     def get_summary(self) -> DashboardSummary:
         db = SessionLocal()

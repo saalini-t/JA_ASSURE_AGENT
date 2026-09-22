@@ -11,6 +11,7 @@ from app.api.v1.lessons import router as lessons_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.publishing import router as publishing_router
 from app.api.v1.agents import router as agents_router
+from app.api.v1.linkedin_auth import router as linkedin_auth_router
 
 api_router = APIRouter()
 
@@ -26,3 +27,4 @@ api_router.include_router(lessons_router)
 api_router.include_router(analytics_router)
 api_router.include_router(publishing_router)
 api_router.include_router(agents_router)
+api_router.include_router(linkedin_auth_router)

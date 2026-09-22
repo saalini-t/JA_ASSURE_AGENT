@@ -24,15 +24,19 @@ import json
 import logging
 import subprocess
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.schemas.agent_contracts import VideoScript, VideoScene
 from app.services.scene_validator import validate_video_script
-from app.services.video_providers import ImageMotionProvider, VideoProvider, SOURCE_AI_GENERATED
-from app.services.tts_providers import VideoTTSProvider, OpenAITTSProvider, TTSGenerationError
+from app.services.video_providers import (
+    ImageMotionProvider, VideoProvider, BrandedFallbackProvider,
+    SOURCE_AI_GENERATED, SOURCE_HUGGINGFACE, SOURCE_GEMINI, SOURCE_STABLE_DIFFUSION, SOURCE_FALLBACK,
+)
+from app.services.tts_providers import VideoTTSProvider, VoiceAgentTTSProvider, TTSGenerationError
 from app.services import caption_service
+from app.services.narration_budget import enforce_narration_budget
 from app.services.ffmpeg_locator import resolve_ffmpeg, resolve_ffprobe, FFmpegNotFoundError
 
 logger = logging.getLogger("ja_assure.video.generation")
@@ -72,6 +76,24 @@ class VideoGenerationError(Exception):
 
 
 @dataclass
+class SceneImageReport:
+    """
+    Per-scene image-provenance record (Phase 3, Step 2): explicit REAL_AI_IMAGE /
+    FALLBACK_IMAGE classification, which concrete provider/model actually produced
+    the file, and -- when a real AI provider was attempted but failed before a
+    graceful fallback covered it (OpenAIImageProvider's degrade-to-fallback design) --
+    the underlying provider error, so a caller can never mistake a fallback card for
+    a real AI-generated image.
+    """
+    scene_number: int
+    source: str  # SOURCE_AI_GENERATED | SOURCE_HUGGINGFACE | SOURCE_FALLBACK
+    is_real_ai: bool
+    provider: str
+    model: Optional[str] = None
+    provider_error: Optional[str] = None
+
+
+@dataclass
 class VideoGenerationResult:
     job_id: str
     success: bool
@@ -88,6 +110,14 @@ class VideoGenerationResult:
     audio_source: Optional[str] = None
     audio_duration_seconds: Optional[float] = None
     caption_file: Optional[str] = None
+    # Narration-budgeting fields (Phase 2) -- default to None for the non-narrated path.
+    narration_word_count: Optional[int] = None
+    narration_estimated_seconds: Optional[float] = None
+    narration_rewritten: bool = False
+    # Per-scene image provenance (Phase 3) -- see SceneImageReport.
+    scene_image_reports: List[SceneImageReport] = field(default_factory=list)
+    ai_generated_scene_count: int = 0
+    fallback_scene_count: int = 0
 
 
 def normalize_scene_durations(
@@ -177,7 +207,17 @@ def _camera_motion_for(index: int) -> str:
 
 def _zoompan_filter(motion: str, duration_seconds: float, fps: int) -> str:
     frames = max(1, int(round(duration_seconds * fps)))
-    scale = f"scale={OUTPUT_WIDTH * 2}:{OUTPUT_HEIGHT * 2}"
+    # Cover-crop, not a stretch: scale up so the image fully covers the 2x-supersampled
+    # canvas while preserving its own aspect ratio (force_original_aspect_ratio=increase),
+    # then center-crop the overflow. A naive scale=W:H (fixed both dimensions) would
+    # non-uniformly stretch/distort any source image whose aspect ratio isn't already
+    # exactly 9:16 -- true for OpenAI's 1024x1536 (2:3) and Hugging Face's default
+    # output. This is a no-op crop for BrandedFallbackProvider's images, which are
+    # already generated at the exact target aspect ratio.
+    scale = (
+        f"scale={OUTPUT_WIDTH * 2}:{OUTPUT_HEIGHT * 2}:force_original_aspect_ratio=increase,"
+        f"crop={OUTPUT_WIDTH * 2}:{OUTPUT_HEIGHT * 2}"
+    )
 
     if motion == "zoom_in":
         z, x, y = "min(zoom+0.0015,1.3)", "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
@@ -271,20 +311,34 @@ def _drawtext_filter(caption_textfile_name: str) -> str:
 
 
 def _render_narrated_scene_clip(
-    job_dir: Path, image_name: str, audio_name: str, caption_name: str,
+    job_dir: Path, image_name: str, audio_name: Optional[str], caption_name: Optional[str],
     clip_name: str, duration_seconds: float, motion: str,
 ) -> None:
     """
     Same visual treatment as _render_scene_clip (image + deterministic pan/zoom),
-    plus a muxed voiceover track and a burned-in caption. Runs with cwd=job_dir and
-    bare filenames so none of OUR files need path escaping in the filter graph --
-    only the external caption font (handled by _drawtext_filter) does.
+    plus a muxed audio track and (when captioned) a burned-in caption. Runs with
+    cwd=job_dir and bare filenames so none of OUR files need path escaping in the
+    filter graph -- only the external caption font (handled by _drawtext_filter) does.
+
+    audio_name=None renders a silent scene: genuine digital silence (FFmpeg's own
+    anullsrc, not a TTS call on empty text) for exactly this scene's duration. This
+    exists for the disclaimer/end-card scene, which intentionally has no voiceover
+    but must still get a real audio stream -- every scene clip needs one so the later
+    `-f concat -c copy` step sees a uniform video+audio layout across all segments.
+    caption_name=None skips the drawtext burn-in entirely (nothing to caption).
     """
-    vf = f"{_zoompan_filter(motion, duration_seconds, OUTPUT_FPS)},{_drawtext_filter(caption_name)}"
+    vf_base = _zoompan_filter(motion, duration_seconds, OUTPUT_FPS)
+    vf = f"{vf_base},{_drawtext_filter(caption_name)}" if caption_name else vf_base
+
+    if audio_name:
+        audio_input = ["-i", audio_name]
+    else:
+        audio_input = ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+
     cmd = [
         _ffmpeg_binary(), "-y",
         "-loop", "1", "-i", image_name,
-        "-i", audio_name,
+        *audio_input,
         "-t", str(duration_seconds),
         "-vf", vf,
         "-r", str(OUTPUT_FPS),
@@ -368,9 +422,17 @@ async def generate_video_mvp(
 ) -> VideoGenerationResult:
     """
     narrate=False (default) reproduces Phase 1 exactly: silent, image-motion only.
-    narrate=True (Phase 2) additionally generates real voiceover + burned captions
-    per scene; tts_provider defaults to OpenAITTSProvider() but can be swapped
-    (e.g. SilentTestTTSProvider in tests) without touching this function's logic.
+    narrate=True additionally generates real voiceover + burned captions per scene,
+    via the team's Voice Agent (VoiceAgentTTSProvider, wrapping voice_service.py's
+    gTTS engine) unless a tts_provider is explicitly passed (e.g. SilentTestTTSProvider
+    in tests) -- swappable without touching this function's logic.
+
+    A scene with no voiceover (scene.voiceover blank) is treated as an intentional
+    silent disclaimer/end-card -- see scene_validator, which only allows this when
+    compliance_disclaimer is set. That scene skips the TTS call entirely (never
+    synthesizes speech from empty text) but still gets a real, silent audio track
+    (FFmpeg anullsrc) so every clip has a uniform stream layout for concatenation,
+    and it stays on screen for its full planned duration.
     """
     job_id = job_id or uuid.uuid4().hex[:12]
     job_dir = MEDIA_ROOT / job_id
@@ -397,8 +459,32 @@ async def generate_video_mvp(
         logger.error(f"[{job_id}] Scene validation failed: {result.error_message}")
         return result
 
+    # Stage: narration-duration budgeting (no TTS call yet). Estimates each narrated
+    # scene's spoken length from word count and rewrites any scene whose narration
+    # would overrun its own on-screen time -- see narration_budget.py. Only relevant
+    # when TTS will actually run; the silent Phase 1 path never reads voiceover text.
+    narration_report = None
+    if narrate:
+        narration_report = enforce_narration_budget(script)
+        if narration_report.any_rewritten:
+            # Requirement: revalidate after rewriting -- a rewrite should never
+            # produce an empty/invalid voiceover, but this is the explicit safety net.
+            revalidation = validate_video_script(script)
+            if not revalidation.valid:
+                result.error_stage = "narration_budget"
+                result.error_message = (
+                    "Narration rewrite produced an invalid script: " + "; ".join(revalidation.errors)
+                )
+                logger.error(f"[{job_id}] {result.error_message}")
+                return result
+            logger.info(
+                f"[{job_id}] Narration budgeting rewrote "
+                f"{sum(1 for s in narration_report.scenes if s.was_rewritten)} scene(s) to fit "
+                f"target_duration={target_duration_seconds or script.target_duration_seconds}s."
+            )
+
     if narrate and tts_provider is None:
-        tts_provider = OpenAITTSProvider()
+        tts_provider = VoiceAgentTTSProvider(language=script.language or "en")
 
     image_provider: VideoProvider = ImageMotionProvider()
     sources: List[str] = []
@@ -408,14 +494,29 @@ async def generate_video_mvp(
 
     for idx, scene in enumerate(script.scenes):
         image_path = job_dir / f"scene_{scene.scene_number:03d}.png"
+        # Step 8: a disclaimer/legal end-card scene is a deterministic branded card,
+        # never a real AI image -- it never touches the configured AI provider (never
+        # spends an API call/cost on a scene whose visual is a fixed compliance card).
+        is_disclaimer_scene = bool((scene.compliance_disclaimer or "").strip())
         try:
-            visual = await image_provider.generate_scene_visual(scene, script.brand or "jade", image_path)
+            if is_disclaimer_scene:
+                visual = await BrandedFallbackProvider().generate_scene_visual(scene, script.brand or "jade", image_path)
+            else:
+                visual = await image_provider.generate_scene_visual(scene, script.brand or "jade", image_path)
         except Exception as e:
             result.error_stage = "image_generation"
             result.error_message = f"scene {scene.scene_number}: {e}"
             logger.error(f"[{job_id}] {result.error_message}")
             return result
         sources.append(visual.source)
+        result.scene_image_reports.append(SceneImageReport(
+            scene_number=scene.scene_number,
+            source=visual.source,
+            is_real_ai=visual.source in (SOURCE_AI_GENERATED, SOURCE_HUGGINGFACE, SOURCE_GEMINI, SOURCE_STABLE_DIFFUSION),
+            provider=visual.provider,
+            model=visual.model,
+            provider_error=visual.provider_error,
+        ))
 
         clip_path = job_dir / f"scene_{scene.scene_number:03d}.mp4"
 
@@ -431,10 +532,30 @@ async def generate_video_mvp(
             clip_paths.append(clip_path)
             continue
 
+        # --- Silent disclaimer/end-card scene: no TTS call on empty text. Validated
+        # upstream (scene_validator) to only be allowed when compliance_disclaimer is
+        # set. Still gets a real (silent) audio track so concat sees a uniform
+        # video+audio layout across every clip, and keeps its full planned duration. ---
+        voiceover_text = (scene.voiceover or "").strip()
+        if not voiceover_text:
+            try:
+                _render_narrated_scene_clip(
+                    job_dir, image_path.name, None, None,
+                    clip_path.name, scene.duration_seconds, _camera_motion_for(idx),
+                )
+            except VideoGenerationError as e:
+                result.error_stage = e.stage
+                result.error_message = f"scene {scene.scene_number}: {e.message}"
+                logger.error(f"[{job_id}] {result.error_message}")
+                return result
+            clip_paths.append(clip_path)
+            logger.info(f"[{job_id}] Scene {scene.scene_number} is a silent disclaimer/end-card -- skipped TTS.")
+            continue
+
         # --- Phase 2 path: voiceover, measured duration, burned caption ---
         audio_path = job_dir / f"scene_{scene.scene_number:03d}.mp3"
         try:
-            await tts_provider.generate_voiceover(scene.voiceover, audio_path)
+            await tts_provider.generate_voiceover(voiceover_text, audio_path)
             audio_duration = _probe_audio_duration(audio_path)
         except (TTSGenerationError, VideoGenerationError) as e:
             message = e.message if hasattr(e, "message") else str(e)
@@ -453,9 +574,9 @@ async def generate_video_mvp(
         # originally-planned duration_seconds. Keep the precise float for rendering/
         # captions; store a rounded int back on the scene for a sane reported value.
         scene.duration_seconds = max(1, round(audio_duration))
-        scene_texts_and_durations.append((scene.voiceover, audio_duration))
+        scene_texts_and_durations.append((voiceover_text, audio_duration))
 
-        local_cue = caption_service.build_local_cue(scene.voiceover, audio_duration)
+        local_cue = caption_service.build_local_cue(voiceover_text, audio_duration)
         local_srt_validation = caption_service.validate_srt([local_cue], total_duration_seconds=audio_duration)
         if not local_srt_validation.valid:
             result.error_stage = "captions"
@@ -467,7 +588,7 @@ async def generate_video_mvp(
         # drawtext's textfile= renders raw text, not the numbered/timestamped SRT
         # format -- write just the caption line for burn-in; the real .srt (with
         # index + timestamps) is the separate global captions.srt artifact below.
-        caption_path.write_text(scene.voiceover.strip(), encoding="utf-8")
+        caption_path.write_text(voiceover_text, encoding="utf-8")
 
         try:
             _render_narrated_scene_clip(
@@ -515,6 +636,13 @@ async def generate_video_mvp(
     if narrate:
         result.audio_source = audio_sources[0] if audio_sources else None
         result.audio_duration_seconds = round(duration, 2)
+    if narration_report is not None:
+        result.narration_word_count = sum(s.final_word_count for s in narration_report.scenes)
+        result.narration_estimated_seconds = round(narration_report.total_estimated_seconds, 2)
+        result.narration_rewritten = narration_report.any_rewritten
+
+    result.ai_generated_scene_count = sum(1 for r in result.scene_image_reports if r.is_real_ai)
+    result.fallback_scene_count = sum(1 for r in result.scene_image_reports if not r.is_real_ai)
 
     # Generalized over however many distinct provider sources actually appear across
     # scenes (SOURCE_AI_GENERATED, SOURCE_HUGGINGFACE, SOURCE_FALLBACK, or any future

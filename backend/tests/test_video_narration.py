@@ -66,12 +66,19 @@ async def test_b_openai_tts_raises_explicit_error_without_credential(tmp_path, m
 
 @pytest.mark.anyio
 async def test_b_pipeline_reports_explicit_tts_failed_stage_not_silent_success(tmp_path, monkeypatch):
-    """The pipeline must never report a narrated video as successful when TTS fails."""
+    """The pipeline must never report a narrated video as successful when TTS fails.
+
+    VoiceAgentTTSProvider (gTTS) is now the pipeline's default and needs no API key,
+    so OpenAITTSProvider is injected explicitly here to keep testing THIS provider's
+    explicit-failure-on-missing-credential behavior.
+    """
     monkeypatch.setattr("app.config.settings.OPENAI_API_KEY", "")  # OpenAITTSProvider will raise
     monkeypatch.setattr(vgs, "MEDIA_ROOT", tmp_path)
 
     script = _make_script(scenes=[_make_scene(scene_number=1, duration_seconds=6)])
-    result = await generate_video_mvp(script, job_id="tts-fail-test", narrate=True)
+    result = await generate_video_mvp(
+        script, job_id="tts-fail-test", narrate=True, tts_provider=OpenAITTSProvider()
+    )
 
     assert result.success is False
     assert result.error_stage == "tts"

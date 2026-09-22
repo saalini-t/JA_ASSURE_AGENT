@@ -44,6 +44,9 @@ data/generated/*
 !data/generated/.gitkeep
 media/*
 !media/.gitkeep
+backend/media/voiceovers/*.mp3
+backend/media/*.mp3
+!backend/media/voiceovers/.gitkeep
 
 # Environment variables & secrets
 .env

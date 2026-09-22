@@ -31,12 +31,13 @@ import { ContentStudioView } from './components/content/ContentStudioView';
 import { ReviewCenterView } from './components/review/ReviewCenterView';
 import { CompetitorIntelView } from './components/competitors/CompetitorIntelView';
 import { LeadsView } from './components/leads/LeadsView';
+import { PublishingView } from './components/publishing/PublishingView';
 import { LearningView } from './components/learning/LearningView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { Modals } from './components/common/Modals';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'publishing' | 'learning' | 'analytics'>('dashboard');
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   
   // Data states
@@ -364,14 +365,43 @@ export function App() {
     }
   };
 
-  const handleGenerateLeadOutreach = async (leadId: number) => {
-    setActionLoading(`outreach-${leadId}`);
+  // Real LinkedIn Publishing (Project 2 "The Hands")
+  const handlePublishToLinkedIn = async (contentId: number) => {
+    setActionLoading(`linkedin-${contentId}`);
     try {
-      const updated = await api.generateLeadOutreach(leadId);
-      showToast(`✓ Generated personalized outreach for ${updated.company || 'lead'}!`);
+      const record = await api.publishToLinkedIn(contentId);
+      showToast(record.status === 'published'
+        ? `✓ Published to LinkedIn (post ${record.external_post_id || 'n/a'})!`
+        : `Publish attempt recorded with status: ${record.status}.`);
       fetchAllData();
     } catch (err: any) {
-      alert(`Outreach generation failed: ${err.message}`);
+      alert(`LinkedIn publish failed: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRefreshEngagement = async (recordId: number) => {
+    setActionLoading(`refresh-${recordId}`);
+    try {
+      await api.refreshEngagementAnalytics(recordId);
+      showToast('✓ Engagement analytics refresh attempted (see record for real result or honest "unavailable").');
+      fetchAllData();
+    } catch (err: any) {
+      alert(`Analytics refresh failed: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRunWorkerOnce = async () => {
+    setActionLoading('worker-run');
+    try {
+      const result = await api.runWorkerOnce();
+      showToast(`✓ Worker pass complete: ${result.processed} item(s) processed.`);
+      fetchAllData();
+    } catch (err: any) {
+      alert(`Worker run failed: ${err.message}`);
     } finally {
       setActionLoading(null);
     }
@@ -437,7 +467,7 @@ export function App() {
       case 'scheduled':
         return <span className="inline-flex items-center gap-1 text-xs text-cyan-300 font-semibold px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30"><Calendar className="w-3 h-3 text-cyan-400" /> Scheduled (Simulated)</span>;
       case 'published':
-        return <span className="inline-flex items-center gap-1 text-xs text-blue-300 font-semibold px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30"><Send className="w-3 h-3 text-blue-400" /> Dispatched (Simulated)</span>;
+        return <span className="inline-flex items-center gap-1 text-xs text-blue-300 font-semibold px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30"><Send className="w-3 h-3 text-blue-400" /> Published to LinkedIn</span>;
       case 'human_review':
         return <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium"><Clock className="w-3.5 h-3.5" /> Awaiting Review</span>;
       case 'rejected':
@@ -580,10 +610,23 @@ export function App() {
                 setEnrichModalLead(lead);
                 setEnrichUrlInput('');
               }}
-              onGenerateOutreach={handleGenerateLeadOutreach}
               actionLoading={actionLoading}
               showToast={showToast}
               getSourceTypeBadge={getSourceTypeBadge}
+              getBrandBadge={getBrandBadge}
+            />
+          )}
+
+          {/* 5b. PUBLISHING VIEW (Real LinkedIn Dispatch -- Project 2 "The Hands") */}
+          {activeTab === 'publishing' && (
+            <PublishingView
+              queue={queue}
+              publishingRecords={publishingRecords}
+              actionLoading={actionLoading}
+              onPublishToLinkedIn={handlePublishToLinkedIn}
+              onRefreshEngagement={handleRefreshEngagement}
+              onRunWorkerOnce={handleRunWorkerOnce}
+              onCancelPublishing={handleCancelPublishing}
               getBrandBadge={getBrandBadge}
             />
           )}
@@ -601,10 +644,7 @@ export function App() {
           {activeTab === 'analytics' && (
             <AnalyticsView
               summary={summary}
-              publishingRecords={publishingRecords}
               feedbacks={feedbacks}
-              onCancelPublishing={handleCancelPublishing}
-              actionLoading={actionLoading}
             />
           )}
         </main>

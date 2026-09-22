@@ -16,6 +16,11 @@ class ComplianceAgent(BaseAgent):
         brand = inputs.get("brand", "jade")
         content_text = inputs.get("content_text", "")
         content_type = inputs.get("content_type", "post")
+        product = inputs.get("product")
+        country = inputs.get("country")
+        jurisdiction = inputs.get("jurisdiction")
+        platform = inputs.get("platform")
+        language = inputs.get("language")
         
         self.log_event("evaluate_compliance", {"brand": brand, "content_length": len(content_text)})
 
@@ -23,7 +28,12 @@ class ComplianceAgent(BaseAgent):
         result = await compliance_service.evaluate_content(
             brand=brand,
             content_text=content_text,
-            content_type=content_type
+            content_type=content_type,
+            product=product,
+            country=country,
+            jurisdiction=jurisdiction,
+            platform=platform,
+            language=language
         )
 
         return result.model_dump()

@@ -6,16 +6,19 @@ import {
   Search, 
   Users, 
   BrainCircuit, 
-  Layers, 
+  Layers,
   Activity,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Send
 } from 'lucide-react';
 import type { HealthCheckResponse } from '../../types';
 
+type TabId = 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'publishing' | 'learning' | 'analytics';
+
 interface SidebarProps {
-  activeTab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics';
-  setActiveTab: (tab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics') => void;
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
   pendingReviewCount: number;
   health: HealthCheckResponse | null;
 }
@@ -38,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'competitors', label: 'Competitor Intel', icon: Search, badge: null },
     { id: 'leads', label: 'Lead Intelligence', icon: Users, badge: null },
+    { id: 'publishing', label: 'Publishing', icon: Send, badge: null },
     { id: 'learning', label: 'Closed-Loop Memory', icon: BrainCircuit, badge: null },
     { id: 'analytics', label: 'Governance Analytics', icon: Layers, badge: null },
   ] as const;

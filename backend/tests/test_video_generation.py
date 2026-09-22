@@ -139,7 +139,13 @@ async def test_e_image_provider_success_uses_ai_path(tmp_path, monkeypatch):
     provider = ImageMotionProvider()
 
     async def fake_generate_ai_image(self, scene, brand, output_path):
-        output_path.write_bytes(b"\x89PNG\r\n\x1a\nfake-image-bytes")
+        # A genuinely decodable minimal PNG -- Phase 3's Pillow-based image
+        # validation rejects fake header-only bytes as corrupt.
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (16, 16), color=(10, 40, 34)).save(buf, format="PNG")
+        output_path.write_bytes(buf.getvalue())
 
     monkeypatch.setattr(OpenAIImageProvider, "_generate_ai_image", fake_generate_ai_image)
 

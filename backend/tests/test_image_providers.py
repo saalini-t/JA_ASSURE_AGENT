@@ -4,9 +4,11 @@ Tests for the multi-provider image generation architecture
 HuggingFaceImageProvider, and confirmation that OpenAIImageProvider /
 BrandedFallbackProvider still behave exactly as before the refactor.
 """
+import io
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from app.services.video_providers import (
     VideoProvider,
@@ -22,6 +24,15 @@ from app.services.video_providers import (
 )
 
 from tests.test_video_generation import _make_scene
+
+
+def _valid_png_bytes(size=(16, 16)) -> bytes:
+    """A genuinely decodable minimal PNG -- Phase 3's Pillow-based image validation
+    (_validate_image_file) rejects fake header-only bytes as corrupt, so test fixtures
+    that simulate a successful provider response need real, openable image data."""
+    buf = io.BytesIO()
+    Image.new("RGB", size, color=(10, 40, 34)).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +81,7 @@ class _FakePILImage:
         self.saved_to = None
 
     def save(self, path):
-        Path(path).write_bytes(b"\x89PNG\r\n\x1a\nfake-hf-image-bytes")
+        Path(path).write_bytes(_valid_png_bytes())
         self.saved_to = path
 
 
@@ -126,7 +137,10 @@ async def test_mocked_huggingface_failure_raises_explicitly_not_a_fallback(tmp_p
     monkeypatch.setattr(HuggingFaceImageProvider, "_call_inference_client", failing_call)
 
     output_path = tmp_path / "scene_001.png"
-    with pytest.raises(ImageGenerationError, match="Hugging Face image generation failed"):
+    # Phase 3: error classification is now specific (this message pattern is
+    # recognized as a transient "model unavailable/loading" condition) rather than
+    # the old generic wrapper text -- still an ImageGenerationError, never a fallback.
+    with pytest.raises(ImageGenerationError, match="Hugging Face model unavailable/loading"):
         await provider.generate_scene_visual(_make_scene(), "jade", output_path)
 
     # Critically: no branded card was silently written and mislabeled as AI-generated.
@@ -168,11 +182,15 @@ def test_selects_branded_fallback_when_explicitly_configured(monkeypatch):
 
 
 def test_selection_is_case_insensitive_and_defaults_on_unknown_value(monkeypatch):
+    from app.services.video_providers import GeminiImageProvider
+
     monkeypatch.setattr("app.config.settings.IMAGE_PROVIDER", "HuggingFace")
     assert isinstance(ImageMotionProvider()._delegate, HuggingFaceImageProvider)
 
+    # Phase: Gemini is now the default/fallback for an unrecognized value -- it
+    # became the PRIMARY AI visual provider, superseding OpenAI as the default.
     monkeypatch.setattr("app.config.settings.IMAGE_PROVIDER", "something_unrecognized")
-    assert isinstance(ImageMotionProvider()._delegate, OpenAIImageProvider)
+    assert isinstance(ImageMotionProvider()._delegate, GeminiImageProvider)
 
 
 @pytest.mark.anyio
@@ -195,7 +213,7 @@ async def test_openai_provider_still_generates_real_image_when_configured(tmp_pa
     monkeypatch.setattr("app.config.settings.OPENAI_API_KEY", "fake-key-for-test")
 
     async def fake_generate_ai_image(self, scene, brand, output_path):
-        output_path.write_bytes(b"\x89PNG\r\n\x1a\nfake-openai-image-bytes")
+        output_path.write_bytes(_valid_png_bytes())
 
     monkeypatch.setattr(OpenAIImageProvider, "_generate_ai_image", fake_generate_ai_image)
 

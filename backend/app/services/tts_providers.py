@@ -104,6 +104,64 @@ class OpenAITTSProvider(VideoTTSProvider):
         return output_path
 
 
+class VoiceAgentTTSProvider(VideoTTSProvider):
+    """
+    Wraps the team's Voice Agent (app.services.voice_service.VoiceService, gTTS-backed)
+    so the video pipeline's per-scene narration reuses that SAME engine rather than a
+    second, competing TTS implementation. This is the default provider for narrated
+    video generation -- unlike OpenAITTSProvider, gTTS needs no API key/credential.
+
+    Only wraps voice_service's existing synthesize_text() primitive (arbitrary text ->
+    one MP3 file); the whole-script synthesize_from_script() used by the standalone
+    Voice Studio feature (/content/voice) is untouched and unrelated to this class.
+    """
+
+    @property
+    def name(self) -> str:
+        return "gtts"  # matches GttsProvider.provider_name, surfaced as audio_source
+
+    def __init__(self, language: str = "en"):
+        self.language = language
+
+    async def generate_voiceover(self, text: str, output_path: Path, voice: Optional[str] = None) -> Path:
+        import asyncio
+        from app.services.voice_service import VoiceService, VoiceServiceError
+
+        cleaned = (text or "").strip()
+        if not cleaned:
+            raise TTSGenerationError("Cannot synthesize an empty voiceover string.")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Root a VoiceService instance directly at this scene's own job directory so
+        # the file lands exactly where the video pipeline expects it -- reuses their
+        # synthesize_text()/GttsProvider/mutagen-duration logic unchanged, just with
+        # a job-scoped destination instead of the global backend/media/voiceovers/.
+        service = VoiceService(media_root=output_path.parent)
+
+        try:
+            result = await asyncio.to_thread(
+                service.synthesize_text,
+                text=cleaned,
+                language_code=voice or self.language,
+                prefix=output_path.stem,
+                scene_count=1,
+            )
+        except VoiceServiceError as e:
+            raise TTSGenerationError(f"Voice Agent (gTTS) synthesis failed: {e}")
+        except Exception as e:
+            raise TTSGenerationError(f"Voice Agent (gTTS) synthesis failed: {e}")
+
+        generated_path = service.media_root / result.audio_filename
+        if not generated_path.exists() or generated_path.stat().st_size == 0:
+            raise TTSGenerationError("Voice Agent (gTTS) produced an empty audio file.")
+
+        # synthesize_text() names the file itself (uuid-suffixed); move it to the
+        # exact scene_NNN.mp3 path video_generation_service expects for FFmpeg.
+        if generated_path != output_path:
+            generated_path.replace(output_path)
+        return output_path
+
+
 class SilentTestTTSProvider(VideoTTSProvider):
     """
     TEST-ONLY provider -- never used in production code paths. Generates a real,

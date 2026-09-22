@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -276,6 +278,27 @@ async def rerun_compliance(item_id: int, db: Session = Depends(get_db)):
     if res.violations:
         item.reason_tag = res.violations[0].rule_id
 
+    # Enrich metadata_json with audit trail and violation breakdown
+    try:
+        current_meta = json.loads(item.metadata_json) if item.metadata_json else {}
+    except Exception:
+        current_meta = {}
+    current_meta["compliance_status"] = res.status
+    current_meta["compliance_score"] = res.score
+    current_meta["compliance_jurisdiction"] = res.jurisdiction
+    current_meta["compliance_product"] = res.product
+    current_meta["compliance_disclaimer_status"] = res.disclaimer_status
+    current_meta["compliance_violations"] = [
+        v.model_dump() if hasattr(v, "model_dump") else v for v in res.violations
+    ]
+    current_meta["compliance_warnings"] = [
+        w.model_dump() if hasattr(w, "model_dump") else w for w in res.warnings
+    ]
+    current_meta["claims_analyzed"] = [
+        c.model_dump() if hasattr(c, "model_dump") else c for c in res.claims_analyzed
+    ]
+    item.metadata_json = json.dumps(current_meta)
+
     db.commit()
     db.refresh(item)
     return item
@@ -324,6 +347,17 @@ async def regenerate_content(item_id: int, db: Session = Depends(get_db)):
         item.compliance_status = "passed" if comp.passed else "flagged"
         item.compliance_score = comp.score
         item.notes = f"Regenerated with {len(active_lessons)} active lessons learned. Compliance: {comp.overall_feedback}"
+        try:
+            current_meta = json.loads(item.metadata_json) if item.metadata_json else {}
+        except Exception:
+            current_meta = {}
+        current_meta["compliance_status"] = comp.status
+        current_meta["compliance_score"] = comp.score
+        current_meta["compliance_jurisdiction"] = comp.jurisdiction
+        current_meta["compliance_violations"] = [
+            v.model_dump() if hasattr(v, "model_dump") else v for v in comp.violations
+        ]
+        item.metadata_json = json.dumps(current_meta)
 
         hitl_service.record_decision(
             db,

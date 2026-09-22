@@ -1,30 +1,24 @@
 import React from 'react';
-import { 
-  Layers, 
-  PieChart, 
-  ShieldCheck, 
-  BarChart3, 
-  TrendingUp, 
-  XCircle, 
-  Users, 
-  Calendar
+import {
+  Layers,
+  PieChart,
+  ShieldCheck,
+  BarChart3,
+  TrendingUp,
+  XCircle,
+  Users,
+  Info
 } from 'lucide-react';
-import type { DashboardSummary, PublishingRecord, Feedback } from '../../types';
+import type { DashboardSummary, Feedback } from '../../types';
 
 interface AnalyticsViewProps {
   summary: DashboardSummary | null;
-  publishingRecords: PublishingRecord[];
   feedbacks: Feedback[];
-  onCancelPublishing: (recordId: number) => void;
-  actionLoading: string | null;
 }
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   summary,
-  publishingRecords,
-  feedbacks,
-  onCancelPublishing,
-  actionLoading
+  feedbacks
 }) => {
   if (!summary) return null;
 
@@ -448,84 +442,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         </div>
       </div>
 
-      {/* Visual 7 (Full Width): Simulated Publishing Dispatch Activity Log */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-          <div>
-            <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-cyan-400" />
-              Simulated Publishing Dispatch Log (Supabase Records)
-            </h3>
-            <p className="text-xs text-slate-400">
-              Human-approved content staged for simulated publishing. No live social API keys are triggered.
-            </p>
-          </div>
-          <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-blue-500/10 text-cyan-300 border border-blue-500/30 w-fit">
-            SIMULATED DISPATCH ONLY
-          </span>
-        </div>
-
-        {publishingRecords.length === 0 ? (
-          <div className="text-center py-8 text-xs text-slate-500 space-y-1">
-            <p className="font-medium text-slate-400">No simulated dispatches scheduled yet.</p>
-            <p>Approve items in the Review Center and click "Schedule Dispatch Preview" to simulate posting.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="text-[11px] text-slate-400 uppercase font-mono border-b border-slate-800/80">
-                <tr>
-                  <th className="py-2.5 px-3">Record ID</th>
-                  <th className="py-2.5 px-3">Content ID</th>
-                  <th className="py-2.5 px-3">Target Platform</th>
-                  <th className="py-2.5 px-3">Scheduled At</th>
-                  <th className="py-2.5 px-3">Dispatch Mode</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-sans">
-                {publishingRecords.map((rec) => (
-                  <tr key={rec.id} className="hover:bg-slate-900/40 transition-colors">
-                    <td className="py-3 px-3 font-mono font-semibold text-slate-300">#{rec.id}</td>
-                    <td className="py-3 px-3 font-mono text-cyan-400">Item #{rec.content_id}</td>
-                    <td className="py-3 px-3 capitalize font-semibold text-slate-200">{rec.platform}</td>
-                    <td className="py-3 px-3 text-slate-300 font-mono">
-                      {rec.scheduled_at ? new Date(rec.scheduled_at).toLocaleString() : 'Immediate'}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
-                        Simulated Preview
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                        rec.status === 'scheduled' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' :
-                        rec.status === 'cancelled' ? 'bg-slate-800 text-slate-400 border border-slate-700' :
-                        'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      }`}>
-                        {rec.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      {rec.status === 'scheduled' ? (
-                        <button
-                          onClick={() => onCancelPublishing(rec.id)}
-                          disabled={actionLoading === `cancel-pub-${rec.id}`}
-                          className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] transition-colors cursor-pointer"
-                        >
-                          Cancel Dispatch
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-600 font-mono">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-900/70 border border-slate-800 text-[11px] text-slate-400">
+        <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+        <span>Dispatch records, real LinkedIn publish actions, and engagement analytics now live in the <strong className="text-slate-300">Publishing</strong> tab.</span>
       </div>
     </div>
   );

@@ -65,6 +65,35 @@ class Competitor(Base):
             return "VERIFIED_SOURCE"
         return "DEMO_DATA"
 
+    snapshots: Mapped[List["CompetitorSnapshot"]] = relationship(
+        "CompetitorSnapshot", back_populates="competitor", cascade="all, delete-orphan",
+        order_by="CompetitorSnapshot.captured_at",
+    )
+
+
+class CompetitorSnapshot(Base):
+    """
+    Immutable point-in-time capture of a competitor's researched state. The
+    `Competitor` row above is a denormalized "latest state" cache (unchanged,
+    upserted in place for backward compatibility); this table is the append-only
+    history that makes "compare current vs. previous" and change-detection digests
+    possible at all -- the upsert-only design had no way to answer "what changed
+    since last time" because it always overwrote the only copy.
+    """
+    __tablename__ = "competitor_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    competitor_id: Mapped[int] = mapped_column(Integer, ForeignKey("competitors.id", ondelete="CASCADE"), index=True)
+    source_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(50), default="DEMO_DATA")  # VERIFIED_SOURCE | AI_ANALYSIS | DEMO_DATA
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    detected_change: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actionable_recommendation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+
+    competitor: Mapped["Competitor"] = relationship("Competitor", back_populates="snapshots")
+
 
 class Lead(Base):
     __tablename__ = "leads"
@@ -82,7 +111,13 @@ class Lead(Base):
     outreach_draft: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(100), default="prospecting")
     status: Mapped[str] = mapped_column(String(50), default="new", index=True) # new, contacted, qualified, converted, archived
+    scoring_breakdown_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    outreach_drafts: Mapped[List["LeadOutreach"]] = relationship(
+        "LeadOutreach", back_populates="lead", cascade="all, delete-orphan",
+        order_by="LeadOutreach.created_at",
+    )
 
     @property
     def source_type(self) -> str:
@@ -93,6 +128,56 @@ class Lead(Base):
         if self.source and "http" in self.source:
             return "VERIFIED_SOURCE"
         return "DEMO_DATA"
+
+    @property
+    def scoring_breakdown(self) -> Optional[dict]:
+        """Real 5-factor breakdown from the last score calculation, or None if this
+        lead predates the field / was created manually without scoring -- never
+        approximated client-side from fit_score alone."""
+        if not self.scoring_breakdown_json:
+            return None
+        import json
+        return json.loads(self.scoring_breakdown_json)
+
+
+class LeadOutreach(Base):
+    """
+    Governed outreach draft for a Lead -- the SAME HITL/compliance gate that guards
+    ContentQueue guards this, reusing hitl_service's generic asset_type/asset_id
+    primitives exactly as ReviewDecision's own docstring originally intended ("so
+    the Lead/Outreach workflow... can route their own approve/reject/edit actions
+    through the exact same primitives... without inventing a second governance
+    mechanism"). Kept separate from Lead (the prospect/company record) so
+    re-enriching/re-scoring a lead never disturbs outreach review history, and so a
+    lead can have multiple outreach attempts over time.
+    """
+    __tablename__ = "lead_outreach"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    lead_id: Mapped[int] = mapped_column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    product: Mapped[str] = mapped_column(String(50), nullable=False)  # jade, doctorshield, jaguartransit
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Immutable snapshot of the first-generated body, mirrors ContentQueue.original_content_raw.
+    original_body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    personalization_points: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list of strings
+    source_evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list of strings
+    compliance_status: Mapped[str] = mapped_column(String(50), default="pending", index=True)  # pending, passed, flagged
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True)  # pending, human_review, approved, rejected
+    compliance_score: Mapped[float] = mapped_column(Float, default=0.0)
+    reason_tag: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Send tracking -- entirely separate from `status` (the HITL approval state).
+    # An outreach can be "approved" and still sit at send_status="draft" forever
+    # if no email provider is configured; only a genuine provider success sets
+    # "sent". Never set to "sent" without a real (mock or SMTP) provider call.
+    send_status: Mapped[str] = mapped_column(String(50), default="draft")  # draft, sent, failed
+    send_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+    lead: Mapped["Lead"] = relationship("Lead", back_populates="outreach_drafts")
 
 
 class Feedback(Base):
@@ -148,6 +233,10 @@ class PublishingRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
     content_id: Mapped[int] = mapped_column(Integer, ForeignKey("content_queue.id", ondelete="CASCADE"), index=True)
     platform: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    # 1-based attempt number for this (content_id, platform) publish effort. Each retry
+    # of a transient failure gets its OWN row (immutable audit trail) rather than
+    # overwriting a prior attempt's error_info -- see publishing_service.py.
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
     external_post_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(50), index=True, default="scheduled") # scheduled, publishing, published, failed
     scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

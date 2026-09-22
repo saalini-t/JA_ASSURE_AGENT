@@ -30,6 +30,7 @@
 6. [Repository Structure](#-6-repository-structure)
 7. [Setup & Quick Start](#-7-setup--quick-start)
 8. [Environment Variables](#-8-environment-variables)
+   - 8b. [Stable Diffusion 1.5 (Local) Setup](#️-8b-stable-diffusion-15-local-setup--optional)
 9. [Verification & Automated Tests](#-9-verification--automated-tests)
 10. [End-to-End Demo Walkthrough](#-10-end-to-end-demo-walkthrough)
 11. [Intentional Prototype Scope & Guardrails](#-11-intentional-prototype-scope--guardrails)
@@ -302,10 +303,38 @@ DATABASE_URL=postgresql+psycopg://postgres:your_supabase_password_here@db.your_s
 GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 
-# OpenAI Images API (Optional -- used for AI-generated video scene visuals in Content
-# Studio's video mode). Leave empty to use a clearly-labeled branded fallback card
-# instead of real AI-generated images. Get a key at https://platform.openai.com/api-keys
+# AI image providers for video scene visuals (Content Studio's video mode).
+# IMAGE_PROVIDER="auto" (default) cascades through the configured providers in
+# priority order, stopping at the first real success: Gemini -> Hugging Face ->
+# Stable Diffusion 1.5 (local) -> branded fallback card. Any provider that's
+# unconfigured or fails is skipped in favor of the next one -- set IMAGE_PROVIDER
+# to one specific value ("gemini" | "openai" | "huggingface" | "stable_diffusion"
+# | "branded_fallback") to force that single provider instead of cascading.
+IMAGE_PROVIDER=auto
+
+# Google Gemini Images -- primary cloud provider. Get a key at https://aistudio.google.com/apikey
+GEMINI_API_KEY=
+GEMINI_IMAGE_MODEL=models/gemini-2.5-flash-image
+
+# OpenAI Images API (optional/legacy cloud provider, not part of the default
+# cascade unless IMAGE_PROVIDER=openai). Get a key at https://platform.openai.com/api-keys
 OPENAI_API_KEY=
+
+# Hugging Face Inference Providers -- optional cloud provider, second in the cascade.
+# Get a token at https://huggingface.co/settings/tokens
+HF_TOKEN=
+HF_IMAGE_MODEL=black-forest-labs/FLUX.1-dev
+
+# Stable Diffusion 1.5 -- local provider, third in the cascade, no API key needed.
+# Requires a one-time `pip install diffusers torch` -- see section 8b below.
+SD15_MODEL_PATH=runwayml/stable-diffusion-v1-5
+SD15_DEVICE=auto
+SD15_LOW_VRAM=False
+SD15_NUM_INFERENCE_STEPS=25
+SD15_GUIDANCE_SCALE=7.5
+SD15_WIDTH=512
+SD15_HEIGHT=768
+SD15_SEED=-1
 
 # Server Configuration
 ENVIRONMENT=development
@@ -315,6 +344,36 @@ DEBUG=True
 LOG_LEVEL=INFO
 DEFAULT_BRANDS=jade,doctorshield,jaguartransit
 ```
+
+---
+
+## 🖼️ 8b. Stable Diffusion 1.5 (Local) Setup — Optional
+
+Stable Diffusion 1.5 is the **local, offline** third-priority image provider (after Gemini and Hugging Face, before the deterministic branded fallback card). It needs no API key or internet access once its model weights are downloaded, so it keeps the video pipeline able to produce real AI images even with both cloud providers unavailable/out of quota.
+
+**This is intentionally NOT installed or downloaded automatically** — `torch` and `diffusers` are large (multi-GB) packages, and the SD 1.5 model weights are themselves ~4GB. Neither is pulled in by `pip install -r requirements.txt`, and nothing in `app/main.py`'s startup ever imports or loads them. The model is only loaded lazily, in memory, the first time a real (non-mocked) generation actually happens.
+
+**One-time setup**, only if you want this provider active:
+
+```powershell
+# 1. Install the two additional dependencies (pick ONE torch line for your machine):
+
+# CPU only (works everywhere, slow — a single 512x768 image can take 1-2+ minutes):
+backend\venv\Scripts\pip install diffusers torch --index-url https://download.pytorch.org/whl/cpu
+
+# NVIDIA GPU with CUDA 12.1 (much faster — seconds per image):
+backend\venv\Scripts\pip install diffusers torch --index-url https://download.pytorch.org/whl/cu121
+
+# 2. (Optional) Pre-download the model weights ahead of time instead of on first
+#    use, so the first real video generation isn't the one paying the download cost:
+backend\venv\Scripts\python -c "from diffusers import StableDiffusionPipeline; StableDiffusionPipeline.from_pretrained('runwayml/stable-diffusion-v1-5')"
+```
+
+**Configuration** (`backend/.env`, see section 8 above): `SD15_MODEL_PATH` accepts either a Hugging Face model id (downloaded to the local HF cache on first use, as above) or an already-downloaded local directory path. `SD15_DEVICE=auto` picks CUDA when available and falls back to CPU otherwise; set `SD15_LOW_VRAM=True` on a memory-constrained GPU to enable attention slicing and sequential CPU offload (slower, but fits in less VRAM).
+
+**If `diffusers`/`torch` aren't installed, or CUDA isn't available when `SD15_DEVICE=cuda` is explicitly set**, the provider fails with a clear, typed error and the normal cascade/fallback mechanism takes over (Hugging Face or the branded card) — it never blocks startup and never silently produces a fake image.
+
+Automated tests never require any of this — they mock the provider's generation call directly and pass with no GPU, no model download, and `torch`/`diffusers` genuinely absent.
 
 ---
 

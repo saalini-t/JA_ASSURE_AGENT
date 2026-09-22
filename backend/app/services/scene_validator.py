@@ -53,8 +53,21 @@ def validate_video_script(script: VideoScript) -> ValidationResult:
 
         if not getattr(scene, "visual_description", None) or not scene.visual_description.strip():
             errors.append(f"{label}: visual_description is missing or empty")
-        if not getattr(scene, "voiceover", None) or not scene.voiceover.strip():
-            errors.append(f"{label}: voiceover is missing or empty")
+
+        # Normal scenes MUST have a non-empty voiceover. The one deliberate exception:
+        # a legal disclaimer/end-card scene, signaled by a populated
+        # compliance_disclaimer field, may be silent -- it still stays on screen for
+        # its full duration (see video_generation_service's silent-scene handling),
+        # it just isn't narrated. This is NOT a global relaxation of the requirement:
+        # a scene with no voiceover AND no compliance_disclaimer still fails here.
+        voiceover_text = (getattr(scene, "voiceover", None) or "").strip()
+        has_compliance_disclaimer = bool((getattr(scene, "compliance_disclaimer", None) or "").strip())
+        if not voiceover_text and not has_compliance_disclaimer:
+            errors.append(
+                f"{label}: voiceover is missing or empty (only a scene with a "
+                f"compliance_disclaimer may be a silent disclaimer/end-card)"
+            )
+
         if not getattr(scene, "onscreen_text", None) or not scene.onscreen_text.strip():
             errors.append(f"{label}: onscreen_text is missing or empty")
 

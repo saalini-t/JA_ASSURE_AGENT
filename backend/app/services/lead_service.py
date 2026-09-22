@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from typing import List, Optional, Dict, Any
@@ -380,6 +381,7 @@ class LeadService:
                 results.append(prospect)
 
                 # Upsert into database
+                scoring_json = json.dumps(scoring.model_dump())
                 existing = db.query(Lead).filter(Lead.company == item["company"]).first()
                 if existing:
                     existing.fit_score = prospect.fit_score
@@ -387,6 +389,7 @@ class LeadService:
                     existing.outreach_draft = prospect.outreach_draft
                     existing.source = prospect.source_type
                     existing.status = "qualified" if prospect.fit_score >= 80 else existing.status
+                    existing.scoring_breakdown_json = scoring_json
                 else:
                     new_lead = Lead(
                         name=prospect.name,
@@ -400,7 +403,8 @@ class LeadService:
                         recommended_brand=prospect.recommended_brand,
                         outreach_draft=prospect.outreach_draft,
                         source=prospect.source_type,
-                        status="qualified" if prospect.fit_score >= 80 else "new"
+                        status="qualified" if prospect.fit_score >= 80 else "new",
+                        scoring_breakdown_json=scoring_json,
                     )
                     db.add(new_lead)
             db.commit()
@@ -412,6 +416,62 @@ class LeadService:
             db.close()
 
         return results
+
+    def build_outreach_subject(self, company: str, brand: str) -> str:
+        brand_clean = (brand or "doctorshield").lower()
+        subjects = {
+            "jade": f"A thought on protecting {company}'s growing collection",
+            "doctorshield": f"A note on safeguarding {company}'s practice",
+            "jaguartransit": f"Securing {company}'s high-value shipments",
+        }
+        return subjects.get(brand_clean, f"A thought on protecting {company}")
+
+    def generate_structured_outreach(self, lead: Lead) -> Dict[str, Any]:
+        """
+        Structured draft (subject/body/personalization_points/source_evidence) for
+        a lead, built entirely from fields the Lead record actually has -- never
+        fabricates facts about the prospect. Compliance/HITL persistence is the
+        caller's job (see POST /leads/{id}/outreach/generate); this only builds the
+        draft content.
+        """
+        from app.services.compliance.context import resolve_context
+
+        brand = (lead.recommended_brand or "doctorshield").lower()
+        body = self.generate_outreach(
+            prospect_name=lead.name.split("(")[0].strip(),
+            company=lead.company,
+            brand=brand,
+            industry=lead.industry,
+            location=lead.location,
+        )
+        # The hand-written outreach templates above predate compliance checking and
+        # don't include the mandatory brand disclaimer every other JA Assure asset
+        # carries -- append it, same as compliance/rewriter.py does for rewritten
+        # marketing copy, rather than let every lead outreach draft get flagged.
+        disclaimer = resolve_context(brand=brand).disclaimer
+        if disclaimer and disclaimer.strip() not in body:
+            body = f"{body.strip()}\n\n{disclaimer.strip()}"
+
+        subject = self.build_outreach_subject(lead.company, brand)
+
+        personalization_points = [p for p in [
+            f"Industry: {lead.industry}" if lead.industry else None,
+            f"Location: {lead.location}" if lead.location else None,
+            f"Company size: {lead.company_size}" if lead.company_size else None,
+        ] if p]
+
+        source_evidence = [p for p in [
+            lead.qualification_reason,
+            f"Lead source: {lead.source_type}" if lead.source else None,
+        ] if p]
+
+        return {
+            "product": brand,
+            "subject": subject,
+            "body": body,
+            "personalization_points": personalization_points,
+            "source_evidence": source_evidence,
+        }
 
     async def enrich_lead(self, lead_id: int, source_url: Optional[str] = None) -> Lead:
         """
@@ -477,6 +537,7 @@ class LeadService:
                 brand=brand_clean
             )
             lead.fit_score = scoring.total_fit_score
+            lead.scoring_breakdown_json = json.dumps(scoring.model_dump())
 
             # Re-generate outreach with enriched context
             lead.outreach_draft = self.generate_outreach(

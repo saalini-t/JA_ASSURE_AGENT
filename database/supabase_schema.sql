@@ -198,3 +198,25 @@ CREATE TRIGGER trg_lessons_learned_updated_at
     BEFORE UPDATE ON lessons_learned
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+
+
+
+ALTER TABLE content_queue
+ADD COLUMN IF NOT EXISTS original_content_raw TEXT;
+
+CREATE TABLE IF NOT EXISTS review_decisions (
+    id SERIAL PRIMARY KEY,
+    asset_type VARCHAR(50) NOT NULL,
+    asset_id INTEGER NOT NULL,
+    reviewer VARCHAR(255),
+    decision VARCHAR(50) NOT NULL,
+    reason_tag VARCHAR(100),
+    notes TEXT,
+    original_content TEXT,
+    edited_content TEXT,
+    compliance_score FLOAT,
+    previous_status VARCHAR(50),
+    new_status VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

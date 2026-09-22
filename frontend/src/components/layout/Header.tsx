@@ -3,7 +3,7 @@ import { RefreshCw, Sliders, ShieldCheck } from 'lucide-react';
 import type { HealthCheckResponse } from '../../types';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics';
+  activeTab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'publishing' | 'learning' | 'analytics';
   selectedBrand: string;
   setSelectedBrand: (brand: string) => void;
   health: HealthCheckResponse | null;
@@ -31,6 +31,10 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   leads: {
     title: 'B2B Lead Intelligence & Prospecting',
     subtitle: '5-factor underwriting qualification scoring with tailored AI-assisted risk outreach.'
+  },
+  publishing: {
+    title: 'Publishing & Dispatch',
+    subtitle: 'Human-approved content dispatched to LinkedIn, with honest manual/automatic status and real engagement data.'
   },
   learning: {
     title: 'Closed-Loop Learning Repository',

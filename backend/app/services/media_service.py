@@ -102,6 +102,8 @@ class MediaService:
                 script.target_platform = platform_clean
                 script.language = lang_clean
                 script.media_status = "ai_storyboard_generated"
+                if not script.scenes or not isinstance(script.scenes[0], VideoScene):
+                    raise ValueError("Structured LLM output did not contain valid VideoScene instances. Triggering deterministic fallback.")
                 if not script.title:
                     script.title = f"AI Storyboard: {topic[:50]}"
                 if not script.concept:
