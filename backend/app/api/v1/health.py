@@ -25,6 +25,6 @@ def health_check(db: Session = Depends(get_db)):
         "supabase_configured": bool(settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY),
         "llm_provider": llm_provider.provider_name,
         "llm_model": llm_provider.model_name,
-        "llm_mode": "groq_live" if llm_provider.is_live else "demo_mock_mode",
+        "llm_mode": f"{llm_provider.provider_name.lower()}_live" if llm_provider.is_live else "demo_mock_mode",
         "supported_brands": settings.DEFAULT_BRANDS,
     }

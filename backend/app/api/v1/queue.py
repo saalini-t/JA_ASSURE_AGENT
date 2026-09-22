@@ -120,6 +120,13 @@ def approve_content(
         raise HTTPException(status_code=404, detail="Content item not found")
 
     previous_status = item.status
+    if previous_status in ["approved", "published", "scheduled"]:
+        if notes and notes != item.notes:
+            item.notes = notes
+            db.commit()
+            db.refresh(item)
+        return item
+
     try:
         new_status = hitl_service.assert_transition_allowed(previous_status, "approve")
     except HITLTransitionError as e:
