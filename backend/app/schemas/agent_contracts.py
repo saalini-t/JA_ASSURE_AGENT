@@ -76,6 +76,7 @@ class GeneratedVariation(BaseModel):
     hashtags: List[str] = Field(default_factory=list)
     cta: Optional[str] = None
     media_prompt: Optional[str] = None # prompt for AI image or video storyboard
+    image_url: Optional[str] = None # URL to attached photographic visual asset
 
 
 # ========================================================
@@ -274,19 +275,6 @@ class VideoScript(BaseModel):
     has_captions: Optional[bool] = None
     audio_source: Optional[str] = None # e.g. gtts | openai_tts
     caption_file: Optional[str] = None # URL to the generated .srt, served like video_url
-
-    # Phase 2 (narration-duration budgeting) reporting fields -- populated by
-    # video_generation_service when narrate=True; see narration_budget.py.
-    narration_word_count: Optional[int] = None
-    narration_estimated_seconds: Optional[float] = None
-    narration_rewritten: Optional[bool] = None
-
-    # Phase 3 (real AI visual generation) per-scene image provenance -- see
-    # video_generation_service.SceneImageReport. Never claims a fallback card is
-    # AI-generated: is_real_ai is explicitly false whenever source is the fallback.
-    scene_image_sources: Optional[List[Dict[str, Any]]] = None
-    ai_generated_scene_count: Optional[int] = None
-    fallback_scene_count: Optional[int] = None
 
 class VoiceConfig(BaseModel):
     language: str = "en"
