@@ -301,3 +301,71 @@ class PublishingRecordResponse(PublishingRecordBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ----------------- Complaint DTOs (Abhi Ram's contribution) -----------------
+class ComplaintBase(BaseModel):
+    customer_name: str
+    customer_email: str
+    customer_phone: Optional[str] = None
+    brand: str # jade, doctorshield, jaguartransit
+    category: str # policy_coverage, claims_denial, billing_dispute, customer_service, compliance_misleading, technical_issue, other
+    priority: str = "medium" # low, medium, high, urgent
+    subject: str
+    description: str
+
+class ComplaintCreate(ComplaintBase):
+    pass
+
+class ComplaintUpdate(BaseModel):
+    priority: Optional[str] = None
+    category: Optional[str] = None
+    assigned_reviewer: Optional[str] = None
+    response_draft: Optional[str] = None
+    resolution_notes: Optional[str] = None
+
+class ComplaintRouteRequest(BaseModel):
+    routed_to: str # underwriting_team, claims_desk, compliance_legal, billing_support, executive_escalations, customer_relations
+    routing_reason: Optional[str] = None
+    assigned_reviewer: Optional[str] = None
+
+class ComplaintActionRequest(BaseModel):
+    action: str # resolve, reject, under_review, request_info
+    resolution_notes: str
+    actioned_by: Optional[str] = "claims_officer"
+    response_draft: Optional[str] = None
+
+class ComplaintStatusUpdate(BaseModel):
+    status: str # pending, under_review, routed, actioned, resolved, rejected
+    notes: Optional[str] = None
+
+class ComplaintResponse(ComplaintBase):
+    id: int
+    complaint_number: str
+    status: str
+    routed_to: Optional[str] = None
+    routing_reason: Optional[str] = None
+    routed_at: Optional[datetime] = None
+    assigned_reviewer: Optional[str] = None
+    response_draft: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    actioned_by: Optional[str] = None
+    actioned_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ComplaintMetricsResponse(BaseModel):
+    total_complaints: int
+    pending_count: int
+    routed_count: int
+    actioned_count: int
+    resolved_count: int
+    rejected_count: int
+    brand_breakdown: Dict[str, int]
+    category_breakdown: Dict[str, int]
+    priority_breakdown: Dict[str, int]
+    department_breakdown: Dict[str, int]
+
