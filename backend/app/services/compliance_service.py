@@ -76,12 +76,59 @@ class ComplianceService:
             skip_llm=skip_llm
         )
 
-    def _deterministic_compliance_rewrite(self, brand: str, text: str, violations: List[ComplianceViolation]) -> str:
+    def evaluate_compliance(
+        self,
+        brand: str,
+        content_text: str,
+        content_type: str = "social_post",
+        product: Optional[str] = None,
+        country: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
+        platform: Optional[str] = None,
+        language: Optional[str] = None,
+        skip_llm: bool = False
+    ) -> ComplianceResult:
         """
-        Legacy fallback helper preserved for backwards compatibility with tests.
+        Synchronous/LangGraph compatible wrapper around evaluate_content.
         """
-        ctx = resolve_context(brand=brand, content_text=text)
-        return compliance_rewriter._deterministic_rewrite(text, ctx, violations)
+        import asyncio
+        import concurrent.futures
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(
+                    asyncio.run,
+                    self.evaluate_content(
+                        brand=brand,
+                        content_text=content_text,
+                        content_type=content_type,
+                        product=product,
+                        country=country,
+                        jurisdiction=jurisdiction,
+                        platform=platform,
+                        language=language,
+                        skip_llm=skip_llm
+                    )
+                ).result()
+        else:
+            return asyncio.run(
+                self.evaluate_content(
+                    brand=brand,
+                    content_text=content_text,
+                    content_type=content_type,
+                    product=product,
+                    country=country,
+                    jurisdiction=jurisdiction,
+                    platform=platform,
+                    language=language,
+                    skip_llm=skip_llm
+                )
+            )
 
 # Singleton service instance
 compliance_service = ComplianceService()
+

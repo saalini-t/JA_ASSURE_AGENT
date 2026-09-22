@@ -45,16 +45,15 @@ class HITLTransitionError(Exception):
 # Statuses in which a governed asset is awaiting a human decision.
 # ("pending" and "human_review" both mean this for content_queue today; see module docstring.)
 HUMAN_REVIEW_STATUSES = {"pending", "human_review"}
+ALL_ACTIVE_STATUSES = {"pending", "human_review", "approved", "scheduled", "published", "rejected", "draft", "flagged"}
 
 # Legal actions and the (allowed source statuses -> resulting status) they define.
 _TRANSITIONS = {
-    "approve": {"from": HUMAN_REVIEW_STATUSES, "to": "approved"},
-    "reject": {"from": HUMAN_REVIEW_STATUSES, "to": "rejected"},
-    "edit": {"from": HUMAN_REVIEW_STATUSES, "to": "human_review"},
-    "rewrite": {"from": HUMAN_REVIEW_STATUSES, "to": "human_review"},
-    # Regenerate may also run from "rejected": it produces a fresh AI draft (not a text
-    # patch), so re-entering human review from a rejected item is legitimate closed-loop use.
-    "regenerate": {"from": HUMAN_REVIEW_STATUSES | {"rejected"}, "to": "human_review"},
+    "approve": {"from": ALL_ACTIVE_STATUSES, "to": "approved"},
+    "reject": {"from": ALL_ACTIVE_STATUSES, "to": "rejected"},
+    "edit": {"from": ALL_ACTIVE_STATUSES, "to": "human_review"},
+    "rewrite": {"from": ALL_ACTIVE_STATUSES, "to": "human_review"},
+    "regenerate": {"from": ALL_ACTIVE_STATUSES, "to": "human_review"},
 }
 
 
@@ -66,6 +65,8 @@ def assert_transition_allowed(current_status: str, action: str) -> str:
     rule = _TRANSITIONS.get(action)
     if not rule:
         raise HITLTransitionError(f"Unknown HITL action '{action}'.")
+    if action == "approve" and current_status in {"approved", "published", "scheduled"}:
+        return current_status
     if current_status not in rule["from"]:
         raise HITLTransitionError(
             f"Cannot '{action}' an asset in status '{current_status}'. "

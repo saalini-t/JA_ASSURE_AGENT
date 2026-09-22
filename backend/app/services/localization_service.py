@@ -73,7 +73,12 @@ class LocalizationService:
         )
 
         if llm_provider.is_live:
-            localized = llm_provider.generate_text(prompt, system_instruction=system_prompt)
+            try:
+                localized = llm_provider.generate_text(prompt, system_instruction=system_prompt)
+                if not localized or localized.startswith("[Demo Mode"):
+                    localized = self._get_deterministic_localized_copy(text, target_lang_clean, brand)
+            except Exception:
+                localized = self._get_deterministic_localized_copy(text, target_lang_clean, brand)
         else:
             # Deterministic, high-quality realistic localized fallback
             localized = self._get_deterministic_localized_copy(text, target_lang_clean, brand)
