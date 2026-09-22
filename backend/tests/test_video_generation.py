@@ -241,7 +241,12 @@ def test_h_ffmpeg_binary_not_found_reports_clear_error(monkeypatch, tmp_path):
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="ffmpeg not installed on this machine")
 @pytest.mark.anyio
 async def test_i_full_pipeline_produces_valid_final_mp4(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.config.settings.OPENAI_API_KEY", "")  # exercise fallback path, no network needed
+    # Explicitly force the deterministic branded fallback rather than relying on
+    # ambient machine state (no configured API keys / no GPU deps) to land there --
+    # now that Local SD1.5 is genuinely installed on this machine, the "auto"
+    # cascade would otherwise really reach it, making this test's outcome depend on
+    # what's installed rather than testing what it says it tests.
+    monkeypatch.setattr("app.config.settings.IMAGE_PROVIDER", "branded_fallback")
     monkeypatch.setattr(vgs, "MEDIA_ROOT", tmp_path)
 
     script = _make_script(scenes=[

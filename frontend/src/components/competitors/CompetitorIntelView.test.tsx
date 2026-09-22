@@ -40,7 +40,6 @@ function renderView(competitors: Competitor[] = [competitor]) {
       actionLoading={null}
       onScrape={noop}
       getSourceTypeBadge={() => <span>SRC</span>}
-      getBrandBadge={() => <span>Jade</span>}
     />
   );
 }

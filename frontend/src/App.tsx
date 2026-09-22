@@ -591,7 +591,6 @@ export function App() {
               actionLoading={actionLoading}
               onScrape={handleScrape}
               getSourceTypeBadge={getSourceTypeBadge}
-              getBrandBadge={getBrandBadge}
             />
           )}
 

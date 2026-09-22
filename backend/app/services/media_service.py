@@ -10,7 +10,7 @@ class MediaService:
     Video/Reels Storyboard and Visual Pipeline Service.
     Produces 30-60 second structured AI storyboards with scene-by-scene visual cues,
     voiceover text, on-screen typography, transitions, and mandatory compliance disclaimers.
-    Uses Gemini structured output when live, with domain-accurate deterministic fallback.
+    Uses Groq structured output when live, with domain-accurate deterministic fallback.
     """
 
     async def generate_video_script(
@@ -117,10 +117,10 @@ class MediaService:
                 if script.scenes and hasattr(script.scenes[0], 'duration_seconds'):
                     script.target_duration_seconds = sum(getattr(s, 'duration_seconds', 10) for s in script.scenes)
 
-                logger.info(f"Successfully generated AI video storyboard with Gemini for {brand_clean}: '{script.title}'")
+                logger.info(f"Successfully generated AI video storyboard with Groq for {brand_clean}: '{script.title}'")
                 return script
             except Exception as e:
-                logger.error(f"Gemini video storyboard generation failed: {e}. Using deterministic fallback.")
+                logger.error(f"Groq video storyboard generation failed: {e}. Using deterministic fallback.")
 
         # 2. DETERMINISTIC FALLBACK GENERATION (Offline / Resilient)
         return self._generate_deterministic_video_script(

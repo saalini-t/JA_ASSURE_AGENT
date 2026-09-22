@@ -1,3 +1,4 @@
+import asyncio
 import re
 import logging
 from typing import Dict, Any, List, Optional
@@ -7,6 +8,7 @@ from app.schemas.agent_contracts import CompetitorInsight, ResearchInsight, Rese
 from app.models.entities import Competitor, CompetitorSnapshot
 from app.database.session import SessionLocal
 from app.services.llm_provider import llm_provider
+from app.services.url_safety import validate_public_http_url, UnsafeURLError
 
 logger = logging.getLogger("ja_assure.research")
 
@@ -70,7 +72,7 @@ DEMO_COMPETITOR_DATABASE = [
 class ResearchService:
     """
     Research and Competitor Intelligence Engine.
-    Supports safe URL scraping, Gemini structured intelligence extraction,
+    Supports safe URL scraping, Groq structured intelligence extraction,
     strategic whitespace & counter-positioning analysis, and transparent source labeling:
     VERIFIED_SOURCE vs. AI_ANALYSIS vs. DEMO_DATA.
     """
@@ -91,12 +93,24 @@ class ResearchService:
             }
 
         try:
+            await asyncio.to_thread(validate_public_http_url, url)
+        except UnsafeURLError as e:
+            logger.warning(f"Scraper refused an unsafe URL: {e}")
+            return {
+                "status": "unsafe_url",
+                "url": url,
+                "title": "Unsafe URL",
+                "summary": f"Refused to fetch this URL: {e}",
+                "source_type": "DEMO_DATA"
+            }
+
+        try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) JA-Assure-ResearchBot/2.0 (B2B Market Intelligence; +https://ja-assure.com)",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5"
             }
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 resp = await client.get(url, headers=headers)
                 
                 # Check response status
@@ -184,7 +198,7 @@ class ResearchService:
 
     async def analyze_scraped_content(self, scraped_data: Dict[str, Any], brand: Optional[str] = None) -> ResearchFinding:
         """
-        Analyze extracted website content using Gemini when available,
+        Analyze extracted website content using Groq when available,
         or structured heuristic fallback when offline.
         Produces verified findings with strict counter-positioning framing:
         'Observed messaging does not prominently address [feature]; this represents a whitespace opportunity'.
@@ -245,10 +259,10 @@ class ResearchService:
                     finding.category = category
                 finding.confidence = 0.92
 
-                logger.info(f"Gemini successfully analyzed competitor intelligence from {url}")
+                logger.info(f"Groq successfully analyzed competitor intelligence from {url}")
                 return finding
             except Exception as e:
-                logger.warning(f"Gemini analysis of scraped content failed: {e}. Falling back to deterministic analysis.")
+                logger.warning(f"Groq analysis of scraped content failed: {e}. Falling back to deterministic analysis.")
 
         # 2. DETERMINISTIC FALLBACK ANALYSIS
         summary = meta_desc if meta_desc else f"Extracted offerings and market presence from {domain}."
@@ -292,7 +306,7 @@ class ResearchService:
         """
         Conduct market and competitor research for the specified brand, topic, and optional country.
         If a competitor_url is provided, safely scrapes and analyzes it, saving the competitor record.
-        Integrates Gemini research analysis when live, with realistic deterministic fallback.
+        Integrates Groq research analysis when live, with realistic deterministic fallback.
         """
         brand_clean = brand.lower()
         findings: List[ResearchFinding] = []
@@ -374,7 +388,7 @@ class ResearchService:
                     )
                 )
             except Exception as e:
-                logger.warning(f"Live Gemini research synthesis failed: {e}. Utilizing fallback intelligence.")
+                logger.warning(f"Live Groq research synthesis failed: {e}. Utilizing fallback intelligence.")
 
         # 3. FALLBACK / SUPPLEMENT WITH DEMO COMPETITORS (Marked DEMO_DATA)
         if len(comp_insights) < 2:
@@ -532,7 +546,7 @@ class ResearchService:
         """
         Lightweight relevance matcher: retrieves competitor moves & market insights
         from the database relevant to the brand and topic.
-        Formats findings into concise bullet points ready for Gemini prompt injection.
+        Formats findings into concise bullet points ready for Groq prompt injection.
         """
         db = SessionLocal()
         try:

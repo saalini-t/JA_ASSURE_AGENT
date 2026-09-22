@@ -111,7 +111,14 @@ def test_generation_parameters_are_read_from_settings(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_missing_dependencies_raise_typed_permanent_error(tmp_path):
+async def test_missing_dependencies_raise_typed_permanent_error(tmp_path, monkeypatch):
+    # Forces the ImportError regardless of whether torch/diffusers are actually
+    # installed in this environment (they now are, for the real local-GPU path) --
+    # same technique the CUDA-unavailable test below uses, so this test's outcome
+    # never depends on ambient machine state.
+    import sys
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setitem(sys.modules, "diffusers", None)
     LocalSD15ImageProvider._pipeline = None  # ensure no cached pipeline from another test
     with pytest.raises(ImagePermanentError, match="diffusers/torch are not installed"):
         await LocalSD15ImageProvider().generate_scene_visual(_make_scene(), "jade", tmp_path / "scene.png")

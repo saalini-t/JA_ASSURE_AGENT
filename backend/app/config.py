@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     HF_TOKEN: str = ""
     HF_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-dev"
 
+    # Real business discovery (Google Places API "New") -- optional. Leave blank
+    # to keep lead discovery on its existing Groq-invented-profile / demo-pool
+    # path. When set, discover_and_score_leads() tries real Google Places
+    # results first (see lead_discovery_providers.discover_real_businesses).
+    GOOGLE_MAPS_API_KEY: str = ""
+
+    # Real contact enrichment (Hunter.io) -- optional secondary provider, tried
+    # before the SSRF-safe direct-website-scrape fallback in
+    # lead_discovery_providers.find_real_contact_email. Leave blank to skip
+    # straight to the direct-scrape fallback.
+    HUNTER_API_KEY: str = ""
+
     # Image Generation (Google Gemini) -- PRIMARY AI visual provider for video scene
     # visuals (see video_providers.GeminiImageProvider). Doesn't depend on OpenAI
     # Images API quota or Hugging Face Inference Provider credits. Leave blank to

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -85,7 +86,7 @@ DEMO_PROSPECTS_POOL = [
 class LeadService:
     """
     Lead Discovery, Transparent 5-Factor Scoring, and Contextual Outreach Engine.
-    Features AI-assisted prospect discovery via Gemini, URL-based lead enrichment,
+    Features AI-assisted prospect discovery via Groq, URL-based lead enrichment,
     and strict attribution labels (VERIFIED_SOURCE vs. AI_GENERATED_PROSPECT vs. DEMO_DATA).
     """
 
@@ -234,7 +235,7 @@ class LeadService:
     ) -> List[LeadProspect]:
         """
         Discover potential B2B insurance prospects.
-        When Gemini is live, uses structured AI prospect discovery across target countries/industries.
+        When Groq is live, uses structured AI prospect discovery across target countries/industries.
         Falls back to curated DEMO_PROSPECTS_POOL offline.
         Scores all prospects transparently, drafts contextual outreach, and stores them in SQLite.
         """
@@ -244,10 +245,54 @@ class LeadService:
 
         try:
             from app.services.research_service import research_service
+            from app.services.lead_discovery_providers import discover_real_businesses, find_real_contact_email
             raw_candidates: List[Dict[str, Any]] = []
 
-            # 1. LIVE GEMINI PROSPECT DISCOVERY
-            if llm_provider.is_live:
+            # 0. REAL BUSINESS DISCOVERY (Google Places API) -- tried first,
+            # exactly like the real-before-synthetic tier ordering used by the
+            # image-provider cascade elsewhere in this codebase. Only engages
+            # if GOOGLE_MAPS_API_KEY is configured; returns [] otherwise, and
+            # the existing Groq/demo-pool tiers below run unchanged.
+            geo_market = country or "Singapore"
+            default_industry = (
+                "Luxury bespoke jewellery" if brand_clean == "jade"
+                else "Private medical & aesthetic clinics" if brand_clean == "doctorshield"
+                else "High-value secured cargo transport"
+            )
+            real_businesses = discover_real_businesses(
+                brand=brand_clean, market=geo_market, industry=industry, target_count=5,
+            )
+            for biz in real_businesses:
+                contact = find_real_contact_email(biz.get("domain")) if biz.get("domain") else None
+                rating_note = (
+                    f"Established business with a {biz['rating']}★ rating across {biz.get('user_rating_count', 0)} reviews."
+                    if biz.get("rating") else "Actively operating business identified via verified business directory."
+                )
+                raw_candidates.append({
+                    "name": (contact or {}).get("name") or biz["name"],
+                    "company": biz["company"],
+                    "industry": industry or default_industry,
+                    "email": (contact or {}).get("email"),  # never fabricated -- None unless a real contact was found
+                    "location": biz.get("location", geo_market),
+                    "company_size": None,
+                    "target_brand": brand_clean,
+                    "likely_decision_maker_role": (contact or {}).get("role") or "Business Decision Maker",
+                    "insurance_need": f"Specialist {brand_clean.title()} underwriting for this business category.",
+                    "risk_exposure": default_industry,
+                    "why_relevant": biz.get("description") or rating_note,
+                    "discovery_rationale": (
+                        f"Real business discovered via Google Places (verified name, address"
+                        f"{', phone' if biz.get('phone') else ''}"
+                        f"{', website' if biz.get('website') else ''}). "
+                        f"Contact {'verified via ' + contact['source'] if contact else 'not publicly available -- outreach requires manual research'}."
+                    ),
+                    "source_type": "VERIFIED_SOURCE",
+                })
+            if raw_candidates:
+                logger.info(f"Google Places discovered {len(raw_candidates)} real businesses for {brand_clean}")
+
+            # 1. LIVE GROQ PROSPECT DISCOVERY (only if no real businesses found)
+            if not raw_candidates and llm_provider.is_live:
                 try:
                     geo = country or "Singapore, Malaysia, Thailand, or Indonesia"
                     ind_query = industry or ("Luxury bespoke jewellery" if brand_clean == "jade" else ("Private medical & aesthetic clinics" if brand_clean == "doctorshield" else "High-value secured cargo transport"))
@@ -292,9 +337,9 @@ class LeadService:
                                 "discovery_rationale": p.discovery_rationale,
                                 "source_type": "AI_GENERATED_PROSPECT"
                             })
-                        logger.info(f"Gemini discovered {len(raw_candidates)} prospect profiles for {brand_clean}")
+                        logger.info(f"Groq discovered {len(raw_candidates)} prospect profiles for {brand_clean}")
                 except Exception as e:
-                    logger.warning(f"Live Gemini lead discovery failed: {e}. Falling back to demo prospect pool.")
+                    logger.warning(f"Live Groq lead discovery failed: {e}. Falling back to demo prospect pool.")
 
             # 2. FALLBACK / DEMO POOL CANDIDATES
             if not raw_candidates:
@@ -477,7 +522,7 @@ class LeadService:
         """
         Enrich an existing lead record.
         If source_url is supplied, scrapes the company page and enriches the lead profile with verified data.
-        If no URL is provided, utilizes Gemini structured analysis to deepen risk reasoning.
+        If no URL is provided, utilizes Groq structured analysis to deepen risk reasoning.
         Updates scoring breakdown explanation and personalized outreach.
         """
         db = SessionLocal()
@@ -492,12 +537,13 @@ class LeadService:
             # 1. VERIFIED URL ENRICHMENT
             if source_url:
                 from app.services.research_service import research_service
+                from app.services.lead_discovery_providers import find_real_contact_email
                 scrape_res = await research_service.scrape_url(source_url)
                 if scrape_res.get("status") == "success":
                     title = scrape_res.get("title", "")
                     meta = scrape_res.get("meta_description", "")
                     headings = ", ".join(scrape_res.get("headings", [])[:3])
-                    
+
                     enrichment_notes = (
                         f"[VERIFIED SOURCE: {source_url}] "
                         f"Offerings: {headings or title}. "
@@ -507,6 +553,15 @@ class LeadService:
                 else:
                     enrichment_notes = f"[VERIFIED SOURCE (Fetch Attempted)]: {source_url}"
                     lead.source = "VERIFIED_SOURCE"
+
+                # Real contact discovery -- only ever sets a genuinely found
+                # email; never overwrites an existing one, never fabricates.
+                if not lead.email:
+                    domain = re.sub(r"^https?://(www\.)?", "", source_url).split("/")[0]
+                    contact = await asyncio.to_thread(find_real_contact_email, domain)
+                    if contact and contact.get("email"):
+                        lead.email = contact["email"]
+                        enrichment_notes += f" Verified contact discovered via {contact['source']}."
 
             # 2. AI ENRICHMENT (No URL provided)
             elif llm_provider.is_live:

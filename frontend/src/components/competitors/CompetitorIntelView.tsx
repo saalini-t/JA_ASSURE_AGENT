@@ -23,7 +23,6 @@ interface CompetitorIntelViewProps {
   actionLoading: string | null;
   onScrape: () => void;
   getSourceTypeBadge: (source?: string, sourceType?: string) => React.ReactNode;
-  getBrandBadge: (brand: string) => React.ReactNode;
 }
 
 export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
@@ -35,8 +34,7 @@ export const CompetitorIntelView: React.FC<CompetitorIntelViewProps> = ({
   scrapeResult,
   actionLoading,
   onScrape,
-  getSourceTypeBadge,
-  getBrandBadge
+  getSourceTypeBadge
 }) => {
   const isScraping = actionLoading === 'scraping';
 
