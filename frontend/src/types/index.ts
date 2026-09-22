@@ -64,34 +64,6 @@ export interface Competitor {
   collected_at: string;
 }
 
-export interface CompetitorSnapshot {
-  id: number;
-  competitor_id: number;
-  source_url?: string;
-  source_type: string;
-  title: string;
-  summary: string;
-  detected_change?: string;
-  actionable_recommendation?: string;
-  captured_at: string;
-}
-
-export interface CompetitorDigestEntry {
-  competitor_id: number;
-  competitor_name: string;
-  category: string;
-  source_url?: string;
-  source_type: string;
-  has_change: boolean;
-  changed_fields: string[];
-  previous_state: Record<string, any> | null;
-  current_state: Record<string, any>;
-  detected_at: string;
-  why_it_matters?: string;
-  suggested_action?: string;
-  note?: string;
-}
-
 export interface Lead {
   id: number;
   name: string;
@@ -107,43 +79,7 @@ export interface Lead {
   source?: string;
   source_type?: string;
   status: string;
-  scoring_breakdown?: LeadScoringBreakdown | null;
   created_at: string;
-}
-
-export interface LeadScoringBreakdown {
-  industry_fit: number;
-  company_profile: number;
-  geographic_relevance: number;
-  product_relevance: number;
-  potential_insurance_need: number;
-  total_fit_score: number;
-  industry_fit_reason?: string;
-  company_profile_reason?: string;
-  geographic_relevance_reason?: string;
-  product_relevance_reason?: string;
-  potential_insurance_need_reason?: string;
-}
-
-export interface LeadOutreach {
-  id: number;
-  lead_id: number;
-  product: string;
-  subject: string;
-  body: string;
-  original_body?: string;
-  personalization_points: string[];
-  source_evidence: string[];
-  compliance_status: string; // pending, passed, flagged
-  status: string; // pending, human_review, approved, rejected
-  compliance_score: number;
-  reason_tag?: string;
-  notes?: string;
-  send_status: string; // draft, sent, failed
-  send_error?: string;
-  sent_at?: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Feedback {
@@ -216,44 +152,6 @@ export interface VideoScript {
   has_captions?: boolean;
   audio_source?: string; // e.g. gtts | openai_tts
   caption_file?: string;
-
-  // Narration-duration budgeting fields
-  narration_word_count?: number;
-  narration_estimated_seconds?: number;
-  narration_rewritten?: boolean;
-
-  // Per-scene real-AI-vs-fallback image provenance -- NEVER label a fallback
-  // scene as AI-generated in the UI; use is_real_ai/source/provider directly.
-  scene_image_sources?: Array<{
-    scene_number: number;
-    source: string; // ai_generated_openai | huggingface | gemini | stable_diffusion_1_5 | branded_fallback_demo
-    is_real_ai: boolean;
-    provider: string;
-    model?: string;
-    provider_error?: string;
-  }>;
-  ai_generated_scene_count?: number;
-  fallback_scene_count?: number;
-}
-
-export interface EngagementMetric {
-  id: number;
-  metric_name: string; // linkedin_likes, linkedin_comments
-  brand?: string;
-  platform?: string;
-  metric_value: number;
-  recorded_at: string;
-}
-
-export interface WorkerRunResult {
-  processed: number;
-  results: Array<{
-    content_id: number;
-    status: string;
-    external_post_id?: string | null;
-    error_info?: string | null;
-    reason?: string;
-  }>;
 }
 
 export interface VoiceGenerationResponse {
@@ -320,12 +218,11 @@ export interface PublishingRecord {
   id: number;
   content_id: number;
   platform: string;
-  attempt: number;
   external_post_id?: string;
-  status: string; // scheduled, publishing, published, failed, cancelled
+  status: string;
   scheduled_at?: string;
   published_at?: string;
-  engagement_metrics?: string; // JSON string -- parse for {source, likes, comments} or {source:"unavailable", reason}
+  engagement_metrics?: string;
   error_info?: string;
   created_at: string;
 }

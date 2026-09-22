@@ -3,7 +3,7 @@ import { RefreshCw, Sliders, ShieldCheck } from 'lucide-react';
 import type { HealthCheckResponse } from '../../types';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'publishing' | 'learning' | 'analytics';
+  activeTab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics';
   selectedBrand: string;
   setSelectedBrand: (brand: string) => void;
   health: HealthCheckResponse | null;
@@ -31,10 +31,6 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   leads: {
     title: 'B2B Lead Intelligence & Prospecting',
     subtitle: '5-factor underwriting qualification scoring with tailored AI-assisted risk outreach.'
-  },
-  publishing: {
-    title: 'Publishing & Dispatch',
-    subtitle: 'Human-approved content dispatched to LinkedIn, with honest manual/automatic status and real engagement data.'
   },
   learning: {
     title: 'Closed-Loop Learning Repository',
@@ -96,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 font-mono">
             <span className={`w-2 h-2 rounded-full ${health ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
             <span className="text-slate-300 text-[11px]">
-              {health?.llm_mode?.includes('live') ? 'Groq LLaMA 3.3' : 'Offline Safe'}
+              {health?.llm_mode?.includes('live') ? 'Google Gemini 3.5 Flash' : 'Offline Safe'}
             </span>
           </div>
 

@@ -20,6 +20,7 @@ import {
   UserCheck,
   ArrowRight
 } from 'lucide-react';
+import { LinkedinIcon } from '../common/BrandIcons';
 import type { ContentQueueItem, ComplianceViolation, ClaimItem, ReviewDecisionItem } from '../../types';
 import { api } from '../../services/api';
 
@@ -36,6 +37,8 @@ interface ReviewCenterViewProps {
   actionLoading: string | null;
   getBrandBadge: (brand: string) => React.ReactNode;
   getStatusBadge: (status: string) => React.ReactNode;
+  onRefresh?: () => void;
+  showToast?: (msg: string) => void;
 }
 
 interface ParsedMetadata {
@@ -71,12 +74,43 @@ export const ReviewCenterView: React.FC<ReviewCenterViewProps> = ({
   onOpenScheduleModal,
   actionLoading,
   getBrandBadge,
-  getStatusBadge
+  getStatusBadge,
+  onRefresh,
+  showToast,
 }) => {
   const [expandedAudits, setExpandedAudits] = useState<Record<number, boolean>>({});
   const [historyModalItem, setHistoryModalItem] = useState<ContentQueueItem | null>(null);
   const [historyItems, setHistoryItems] = useState<ReviewDecisionItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [publishedMap, setPublishedMap] = useState<Record<number, string>>({});
+
+  const handlePublishToLinkedIn = async (item: ContentQueueItem) => {
+    setPublishingId(item.id);
+    try {
+      const res = await api.dispatchLinkedIn({
+        item_id: item.id,
+        text: item.content_raw,
+        title: item.topic || undefined,
+      });
+      const url = res.direct_url || (res.post_id ? `https://www.linkedin.com/feed/update/${res.post_id}` : 'https://www.linkedin.com/feed/');
+      setPublishedMap(prev => ({ ...prev, [item.id]: url }));
+      if (showToast) {
+        showToast(`🚀 Successfully published #${item.id} live to LinkedIn!`);
+      }
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      if (showToast) {
+        showToast(`✕ Failed to publish to LinkedIn: ${err.message || 'Error'}`);
+      } else {
+        alert(`Failed to publish to LinkedIn: ${err.message || 'Error'}`);
+      }
+    } finally {
+      setPublishingId(null);
+    }
+  };
 
   const toggleAudit = (id: number) => {
     setExpandedAudits(prev => ({ ...prev, [id]: !prev[id] }));
@@ -440,6 +474,29 @@ export const ReviewCenterView: React.FC<ReviewCenterViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Direct Post to LinkedIn Button */}
+                    {publishedMap[item.id] || item.status === 'published' ? (
+                      <a
+                        href={publishedMap[item.id] || 'https://www.linkedin.com/feed/'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        Published on LinkedIn ↗
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => handlePublishToLinkedIn(item)}
+                        disabled={publishingId === item.id || isBlocked}
+                        className="px-4 py-1.5 rounded-xl text-xs font-bold bg-[#0077B5] hover:bg-[#006097] text-white flex items-center gap-1.5 shadow-md shadow-[#0077B5]/25 transition-all cursor-pointer disabled:opacity-50"
+                        title="Publish directly to connected LinkedIn account"
+                      >
+                        <LinkedinIcon className="w-3.5 h-3.5 fill-current" />
+                        {publishingId === item.id ? 'Publishing...' : '🚀 Post to LinkedIn'}
+                      </button>
+                    )}
+
                     {/* For Approved Items: Schedule Dispatch Preview */}
                     {isApproved && (
                       <button

@@ -163,10 +163,10 @@ export const Modals: React.FC<ModalsProps> = ({
               </div>
             </div>
 
-            {/* Mock Destination Route */}
+            {/* Live Destination Route */}
             <div className="text-[11px] font-mono text-slate-400 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
-              <span>Estimated Mock Dispatch Target:</span>
-              <span className="text-cyan-400">api.dispatch.simulated/{scheduledPlatform}/v1/queue</span>
+              <span>Live Social Dispatch Endpoint:</span>
+              <span className="text-cyan-400">api.social.publish/{scheduledPlatform}/v1/production</span>
             </div>
 
             {/* Content Preview Box */}

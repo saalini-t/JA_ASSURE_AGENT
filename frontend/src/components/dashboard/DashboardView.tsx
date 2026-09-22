@@ -1,294 +1,281 @@
 import React from 'react';
 import { 
-  Layers, 
+  FileText, 
   Clock, 
-  ShieldCheck, 
-  BrainCircuit, 
-  Users, 
   CheckCircle2, 
-  ChevronRight, 
-  Wand2, 
-  Search, 
-  Sparkles,
-  ArrowUpRight
+  Plus, 
+  Sparkles, 
+  ArrowRight, 
+  ShieldCheck, 
+  ExternalLink
 } from 'lucide-react';
-import { WorkflowVisualizer } from './WorkflowVisualizer';
-import type { DashboardSummary, ContentQueueItem, LessonLearned } from '../../types';
+import { LinkedinIcon } from '../common/BrandIcons';
+import { WorkflowArchitectureBanner } from '../common/WorkflowArchitectureBanner';
+import type { DashboardSummary, ContentQueueItem } from '../../types';
+import { API_ORIGIN } from '../../services/api';
 
 interface DashboardViewProps {
   summary: DashboardSummary | null;
   queue: ContentQueueItem[];
-  lessons: LessonLearned[];
-  setActiveTab: (tab: 'dashboard' | 'studio' | 'review' | 'competitors' | 'leads' | 'learning' | 'analytics') => void;
-  getBrandBadge: (brand: string) => React.ReactNode;
-  getStatusBadge: (status: string) => React.ReactNode;
+  onNavigate: (tab: string) => void;
+  onOpenLinkedInModal: () => void;
+  onOpenAutonomousModal: () => void;
+  onOpenAuditLog: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   summary,
   queue,
-  lessons,
-  setActiveTab,
-  getBrandBadge,
-  getStatusBadge
+  onNavigate,
+  onOpenLinkedInModal,
+  onOpenAutonomousModal,
+  onOpenAuditLog
 }) => {
-  if (!summary) return null;
+  const publishedCount = summary?.published ?? 0;
+  const pendingCount = summary?.pending_human_review ?? 0;
+  const totalCount = summary?.total_content ?? 0;
 
-  const totalContent = summary.total_content || 0;
-  const pendingReview = summary.pending_human_review || 0;
-  const humanApproved = summary.human_approved || summary.approved || 0;
-  const approvalRate = summary.approval_rate !== undefined 
-    ? summary.approval_rate 
-    : (totalContent > 0 ? Number(((humanApproved / totalContent) * 100).toFixed(1)) : 0);
-
-  const pendingItems = queue.filter(q => q.status === 'human_review' || q.status === 'pending');
-  const activeLessons = lessons.filter(l => l.active).slice(0, 3);
+  const recentItems = queue.slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      {/* 6 Executive KPI Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* KPI 1: Pipeline */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>Pipeline</span>
-            <div className="w-6 h-6 rounded-lg bg-blue-500/10 text-cyan-400 flex items-center justify-center">
-              <Layers className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-white">{totalContent}</div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Total drafted items</p>
-          </div>
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
+      
+      {/* Welcome Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Nexora Intelligence Console</h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Real-time autonomous AI marketing and compliant asset publishing for JA Assure.
+          </p>
         </div>
 
-        {/* KPI 2: Pending Human Review */}
-        <div className="glass-panel p-4 rounded-2xl border border-amber-900/40 bg-amber-950/10 hover:border-amber-700/50 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-amber-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>Pending Review</span>
-            <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-amber-300">{pendingReview}</div>
-            <p className="text-[10px] text-amber-200/70 mt-0.5">Awaiting human sign-off</p>
-          </div>
-        </div>
-
-        {/* KPI 3: Approval Rate */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>Approval Rate</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-emerald-400">{approvalRate}%</div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Human pass rate</p>
-          </div>
-        </div>
-
-        {/* KPI 4: Compliance Index */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>Compliance</span>
-            <div className="w-6 h-6 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
-              <ShieldCheck className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-cyan-400">{summary.average_compliance_score}%</div>
-            <p className="text-[10px] text-slate-400 mt-0.5">MAS / MOH safety index</p>
-          </div>
-        </div>
-
-        {/* KPI 5: Active Lessons */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>AI Lessons</span>
-            <div className="w-6 h-6 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
-              <BrainCircuit className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-purple-300">
-              {summary.active_lessons_count !== undefined ? summary.active_lessons_count : summary.total_lessons_learned}
-            </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Active prompt rules</p>
-          </div>
-        </div>
-
-        {/* KPI 6: B2B Leads */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 text-[10px] font-mono font-semibold tracking-wider uppercase">
-            <span>B2B Leads</span>
-            <div className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-              <Users className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-indigo-300">{summary.total_leads}</div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Avg fit: {summary.average_lead_score}%</p>
-          </div>
+        {/* 1-Click Autonomous Action */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenAutonomousModal}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-500 hover:opacity-95 text-white transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            Run Autonomous Campaign
+          </button>
         </div>
       </div>
 
-      {/* Prominent Core Differentiator: 7-Stage Closed-Loop Workflow */}
-      <WorkflowVisualizer 
-        pendingCount={pendingReview}
-        complianceAvg={summary.average_compliance_score}
-        activeLessons={summary.active_lessons_count !== undefined ? summary.active_lessons_count : summary.total_lessons_learned}
-        totalGenerated={totalContent}
-      />
+      {/* 4 Top KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        
+        {/* Card 1: Total Content */}
+        <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-5 space-y-2 shadow-lg">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Total Content Assets</span>
+            <FileText className="w-4 h-4 text-slate-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-extrabold text-white font-mono">{totalCount}</span>
+            <span className="text-[11px] text-slate-400 font-semibold font-mono">in database</span>
+          </div>
+        </div>
 
-      {/* Two Column Command Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (2 Cols): Active Content Review Items */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <div>
-              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-400" />
-                Active Content Review Queue
-              </h3>
-              <p className="text-xs text-slate-400">Items requiring human sign-off before simulated dispatch</p>
-            </div>
-            <button
-              onClick={() => setActiveTab('review')}
-              className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+        {/* Card 2: Pending Review */}
+        <div 
+          onClick={() => onNavigate('review')}
+          className="bg-[#0F172A] border border-amber-500/30 hover:border-amber-500/60 transition-all rounded-2xl p-5 space-y-2 shadow-lg cursor-pointer"
+        >
+          <div className="flex items-center justify-between text-xs text-amber-300/80">
+            <span>Review Queue</span>
+            <Clock className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-extrabold text-amber-300 font-mono">{pendingCount}</span>
+            <span className="text-[11px] text-amber-400/90 font-semibold font-mono">
+              {pendingCount > 0 ? 'Needs approval' : 'Queue cleared'}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: Published */}
+        <div className="bg-[#0F172A] border border-emerald-500/30 rounded-2xl p-5 space-y-2 shadow-lg">
+          <div className="flex items-center justify-between text-xs text-emerald-300/80">
+            <span>Live Published</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-extrabold text-emerald-300 font-mono">{publishedCount}</span>
+            <span className="text-[11px] text-emerald-400 font-semibold font-mono">LinkedIn Live</span>
+          </div>
+        </div>
+
+        {/* Card 4: LinkedIn Connected */}
+        <div 
+          onClick={onOpenLinkedInModal}
+          className="bg-[#0F172A] border border-blue-500/30 hover:border-blue-500/60 transition-all rounded-2xl p-5 space-y-2 shadow-lg cursor-pointer"
+        >
+          <div className="flex items-center justify-between text-xs text-blue-300/80">
+            <span>LinkedIn Identity</span>
+            <LinkedinIcon className="w-4 h-4 text-[#0077B5]" />
+          </div>
+          <div className="space-y-0.5">
+            <span className="text-lg font-bold text-white block">Madhan D</span>
+            <span className="text-[10px] text-emerald-400 font-mono font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Authorized & Live
+            </span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Interactive Autonomous Workflow Architecture Banner */}
+      <WorkflowArchitectureBanner onNavigate={onNavigate} />
+
+      {/* Main Grid: Recent Content (Left) & Quick Actions (Right) matching Screen 3 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Left 2 Cols: Recent Content */}
+        <div className="lg:col-span-2 bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-white text-base">Recent Content</h3>
+            <button 
+              onClick={() => onNavigate('library')}
+              className="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
             >
-              Open Review Center ({pendingReview}) <ChevronRight className="w-3.5 h-3.5" />
+              View all <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {pendingItems.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-500 space-y-1">
-              <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto opacity-70" />
-              <p className="font-medium text-slate-400">Your content queue is completely clear.</p>
-              <p>All items have been approved or dispatched.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-800/80">
-              {pendingItems.slice(0, 3).map((item) => (
-                <div key={item.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/30 px-2 rounded-xl transition-colors">
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {getBrandBadge(item.brand)}
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 capitalize">
-                        {item.platform}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-500">#{item.id}</span>
-                      {getStatusBadge(item.status)}
+          <div className="space-y-3">
+            {recentItems.length > 0 ? (
+              recentItems.map((item) => {
+                const isPub = item.status === 'published';
+                const isApp = item.status === 'approved';
+                return (
+                  <div 
+                    key={item.id}
+                    className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/90 hover:border-slate-700 transition-all flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-start gap-3.5 overflow-hidden">
+                      <div className="w-9 h-9 rounded-lg bg-[#0077B5]/15 border border-[#0077B5]/30 flex items-center justify-center text-[#0077B5] shrink-0 mt-0.5">
+                        <LinkedinIcon className="w-4 h-4 fill-current" />
+                      </div>
+                      <div className="overflow-hidden space-y-1">
+                        <p className="text-xs font-semibold text-white truncate max-w-[420px]">
+                          {item.topic || 'Specialised insurance considerations for bespoke collections'}
+                        </p>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                          <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 uppercase font-bold">
+                            {item.brand}
+                          </span>
+                          <span>•</span>
+                          <span>{item.platform.toUpperCase()}</span>
+                          <span>•</span>
+                          <span>Score: {item.compliance_score || 100}/100</span>
+                        </div>
+                      </div>
                     </div>
-                    <h4 className="font-semibold text-xs text-slate-200 truncate">{item.topic}</h4>
-                    <p className="text-[11px] text-slate-400 line-clamp-1 font-sans">{item.content_raw}</p>
-                  </div>
 
-                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                    <span className={`text-[11px] font-bold font-mono px-2.5 py-0.5 rounded-full ${
-                      item.compliance_score >= 85 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                      item.compliance_score >= 60 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                      'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    }`}>
-                      {item.compliance_score}%
-                    </span>
-                    <button
-                      onClick={() => setActiveTab('review')}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      Audit Item
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
+                        isPub 
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' 
+                          : isApp 
+                          ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}>
+                        {item.status.toUpperCase()}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                );
+              })
+            ) : (
+              <div className="text-center py-10 text-slate-400 text-xs">
+                No recent content. Click "Create New Content" to start!
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right Column (1 Col): AI Intelligence & Shortcuts */}
-        <div className="space-y-6">
-          {/* Active Lessons Spotlight */}
-          <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
-              <h3 className="font-bold text-xs uppercase tracking-wider text-purple-300 flex items-center gap-2">
-                <BrainCircuit className="w-4 h-4 text-purple-400" />
-                Active Prompt Memory Rules
-              </h3>
-              <button 
-                onClick={() => setActiveTab('learning')}
-                className="text-[11px] text-purple-400 hover:text-purple-300 font-mono cursor-pointer"
-              >
-                View All
-              </button>
-            </div>
+        {/* Right 1 Col: Quick Actions matching Screen 3 */}
+        <div className="space-y-4">
+          <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+            <h3 className="font-bold text-white text-base">Quick Actions</h3>
 
-            <div className="space-y-2">
-              {activeLessons.length === 0 ? (
-                <div className="text-xs text-slate-500 py-3 text-center">No active lessons recorded yet.</div>
-              ) : (
-                activeLessons.map((l) => (
-                  <div key={l.id} className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="font-mono font-semibold text-purple-400 uppercase">
-                        {l.category.replace(/_/g, ' ')}
-                      </span>
-                      <span className="font-mono text-cyan-400">Triggered {l.frequency}x</span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed font-sans">{l.lesson}</p>
-                  </div>
-                ))
-              )}
+            <div className="space-y-2.5">
+              <button
+                onClick={() => onNavigate('studio')}
+                className="w-full p-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center justify-between transition-colors shadow-lg shadow-blue-600/20 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4" />
+                  <span>Create New Content</span>
+                </div>
+                <ArrowRight className="w-4 h-4 opacity-80" />
+              </button>
+
+              <button
+                onClick={() => onNavigate('review')}
+                className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-semibold text-xs flex items-center justify-between transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>View Review Queue</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                  {pendingCount}
+                </span>
+              </button>
+
+              <button
+                onClick={onOpenLinkedInModal}
+                className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-semibold text-xs flex items-center justify-between transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <LinkedinIcon className="w-4 h-4 text-[#0077B5]" />
+                  <span>Manage LinkedIn Connection</span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold">ACTIVE</span>
+              </button>
+
+              <button
+                onClick={onOpenAuditLog}
+                className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-semibold text-xs flex items-center justify-between transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-slate-400" />
+                  <span>View Audit Log Timeline</span>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+
+              <a
+                href={`${API_ORIGIN}/evidence/Nexora_JA_Assure_Autonomous_Execution_Evidence_Report.pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full p-3 rounded-xl bg-teal-950/30 hover:bg-teal-950/50 text-teal-300 border border-teal-500/40 font-semibold text-xs flex items-center justify-between transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ExternalLink className="w-4 h-4 text-teal-400" />
+                  <span>Open HD Evidence PDF</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold bg-teal-500/20 px-2 py-0.5 rounded text-teal-300">PDF</span>
+              </a>
             </div>
           </div>
 
-          {/* Quick Action Launchers */}
-          <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">Quick Operations</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => setActiveTab('studio')}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-200 group transition-all cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-cyan-400 flex items-center justify-center">
-                    <Wand2 className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="font-medium">Draft New Content Campaign</span>
-                </div>
-                <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 transition-colors" />
-              </button>
-
-              <button
-                onClick={() => setActiveTab('competitors')}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-200 group transition-all cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
-                    <Search className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="font-medium">Scrape Competitor Intelligence</span>
-                </div>
-                <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 transition-colors" />
-              </button>
-
-              <button
-                onClick={() => setActiveTab('leads')}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-200 group transition-all cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="font-medium">Discover High-Fit B2B Leads</span>
-                </div>
-                <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 transition-colors" />
-              </button>
+          {/* Connected Identity Info Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-950/20 via-slate-900 to-slate-950 border border-blue-900/40 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 font-mono text-[10px]">CURRENT PUBLISHER</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-bold">LINKEDIN</span>
             </div>
+            <p className="font-bold text-white">Madhan D</p>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Posts will be published live to personal LinkedIn profile.
+            </p>
           </div>
         </div>
+
       </div>
+
     </div>
   );
 };

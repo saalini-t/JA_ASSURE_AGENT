@@ -6,13 +6,15 @@ import {
   ShieldCheck, 
   BrainCircuit, 
   Search, 
-  Wand2,
-  Volume2,
-  Download,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2
+  Wand2, 
+  Volume2, 
+  Download, 
+  RefreshCw, 
+  AlertCircle, 
+  CheckCircle2 
 } from 'lucide-react';
+import { LinkedinIcon } from '../common/BrandIcons';
+import { VideoProductionLoader } from '../common/VideoProductionLoader';
 import type { GeneratedVariation, VideoScript, LessonLearned, Competitor, VoiceGenerationResponse } from '../../types';
 import { api, API_ORIGIN, getMediaUrl } from '../../services/api';
 
@@ -30,7 +32,6 @@ interface ContentStudioViewProps {
   actionLoading: string | null;
   onGenerateVariations: () => void;
   onLaunchFullSuite: () => void;
-  onRunFullCampaign: () => void;
   showToast: (msg: string) => void;
   lessons: LessonLearned[];
   competitors: Competitor[];
@@ -50,7 +51,6 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
   actionLoading,
   onGenerateVariations,
   onLaunchFullSuite,
-  onRunFullCampaign,
   showToast,
   lessons,
   competitors
@@ -59,12 +59,67 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceGenerationResponse | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [publishingVar, setPublishingVar] = useState<string | null>(null);
+  const [publishedLinks, setPublishedLinks] = useState<Record<string, { url: string; id: string }>>({});
+  const [publishingVideo, setPublishingVideo] = useState(false);
+  const [publishedVideoUrl, setPublishedVideoUrl] = useState<string | null>(null);
 
   // Reset voice state whenever a fresh video script is produced
   useEffect(() => {
     setVoiceResult(null);
     setVoiceError(null);
-  }, [videoScript]);
+    setPublishedLinks({});
+    setPublishedVideoUrl(null);
+  }, [videoScript, generatedVariations]);
+
+  const handlePostToLinkedIn = async (v: GeneratedVariation) => {
+    setPublishingVar(v.variation_label);
+    try {
+      const fullText = v.content_text + (v.hashtags?.length ? '\n\n' + v.hashtags.join(' ') : '');
+      const res = await api.dispatchLinkedIn({
+        text: fullText,
+        title: v.headline || `${studioBrand.toUpperCase()} Campaign`,
+      });
+      const postUrl = res.direct_url || (res.post_id ? `https://www.linkedin.com/feed/update/${res.post_id}` : 'https://www.linkedin.com/feed/');
+      setPublishedLinks(prev => ({
+        ...prev,
+        [v.variation_label]: { url: postUrl, id: res.post_id || '' }
+      }));
+      showToast(`🚀 Variation ${v.variation_label} published live to LinkedIn!`);
+    } catch (err: any) {
+      console.error(err);
+      showToast(`✕ LinkedIn publish failed: ${err.message || 'Error'}`);
+    } finally {
+      setPublishingVar(null);
+    }
+  };
+
+  const handlePostVideoToLinkedIn = async () => {
+    if (!videoScript) return;
+    setPublishingVideo(true);
+    try {
+      const fullText = `🎬 ${videoScript.title || videoScript.concept}\n\n${videoScript.hook || ''}\n\n${videoScript.disclaimer || ''}\n\n#${studioBrand} #insurance #InsurTech`;
+      const mediaPath = videoScript.video_url || (videoScript.job_id ? `/media/generated/${videoScript.job_id}/final.mp4` : undefined);
+      const res = await api.dispatchLinkedIn({
+        text: fullText,
+        media_path: mediaPath,
+        media_type: 'video',
+        title: videoScript.title || videoScript.concept
+      });
+      const postUrl = res.direct_url || (res.post_id ? `https://www.linkedin.com/feed/update/${res.post_id}` : 'https://www.linkedin.com/feed/');
+      setPublishedVideoUrl(postUrl);
+      if (res.media_type === 'VIDEO') {
+        showToast('🚀 Reel Video and copy published live to LinkedIn!');
+      } else {
+        showToast('✓ Post published to LinkedIn (text mode)');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast(`✕ Video publish failed: ${err.message || 'Error'}`);
+    } finally {
+      setPublishingVideo(false);
+    }
+  };
 
   const handleGenerateVoiceover = async () => {
     if (!videoScript) return;
@@ -84,9 +139,8 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
     }
   };
 
-  const isGenerating = actionLoading === 'generating';
-  const isExecutingSuite = actionLoading === 'suite';
-  const isRunningCampaign = actionLoading === 'campaign';
+  const isGenerating = actionLoading === 'generating' || actionLoading === 'generating-variations';
+  const isExecutingSuite = actionLoading === 'suite' || actionLoading === 'generating-suite';
   const isVideoMode = studioPlatform === 'reel' || studioPlatform === 'video';
 
   // Count relevant active lessons for this brand
@@ -131,11 +185,12 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                 onChange={(e) => setStudioPlatform(e.target.value)}
                 className="w-full mt-1.5 bg-slate-900 border border-slate-700/80 rounded-xl p-2.5 text-xs text-slate-200 focus:ring-1 focus:ring-amber-500 cursor-pointer font-medium"
               >
-                <option value="linkedin">LinkedIn Post (Executive / Risk Advisory)</option>
-                <option value="instagram">Instagram Carousel / Caption (Visual Storytelling)</option>
-                <option value="reel">Instagram / TikTok Reel (45s Production Cue Sheet)</option>
+                <option value="linkedin">LinkedIn Post (Executive Thought-Leadership + Photo)</option>
+                <option value="instagram">Instagram Post (Photo + Engaging Captions)</option>
+                <option value="reel">Reel / Short Video (MP4 Video + TTS Voiceover + Captions)</option>
                 <option value="video">Explainer Video Script (60s Multi-Scene Storyboard)</option>
-                <option value="blog">InsurTech Editorial / Thought Leadership</option>
+                <option value="blog">InsurTech Editorial / Thought Leadership Article</option>
+                <option value="carousel">Visual Carousel (6-Slide Strategic Infographic Deck)</option>
                 <option value="email">VIP Underwriting Newsletter / Broker Note</option>
               </select>
             </div>
@@ -176,28 +231,16 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                 className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50"
               >
                 <Sparkles className="w-3.5 h-3.5 text-slate-950" />
-                {isGenerating ? 'Synthesizing with Groq...' : isVideoMode ? 'Generate AI Video Storyboard' : 'Generate A/B Variations'}
+                {isGenerating ? 'Synthesizing with Google Gemini...' : isVideoMode ? 'Generate AI Video Storyboard' : 'Generate A/B Variations'}
               </button>
 
               <button
                 onClick={onLaunchFullSuite}
-                disabled={isGenerating || isExecutingSuite || isRunningCampaign}
+                disabled={isGenerating || isExecutingSuite}
                 className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5 text-cyan-400" />
                 {isExecutingSuite ? 'Executing Full Brain Suite...' : 'Execute Full Pipeline Suite'}
-              </button>
-
-              <button
-                onClick={onRunFullCampaign}
-                disabled={isGenerating || isExecutingSuite || isRunningCampaign}
-                title="One sequential call: writes the copy AND generates its real image/video together, instead of separate steps"
-                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Wand2 className="w-3.5 h-3.5" />
-                {isRunningCampaign
-                  ? (isVideoMode ? 'Running Campaign (Video)...' : 'Running Campaign (Image)...')
-                  : `Run Full Campaign (Content + ${isVideoMode ? 'Video' : 'Image'}, One Click)`}
               </button>
             </div>
           </div>
@@ -255,14 +298,23 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
         {/* Sub-tab 1: CONTENT (A/B Variations or Video Storyboard) */}
         {selectedSubTab === 'content' && (
           <div className="space-y-4">
-            {isGenerating && (
-              <div className="glass-panel p-10 rounded-2xl border border-amber-500/30 text-center space-y-3 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-5 h-5 animate-spin text-amber-400" />
+            {isGenerating && isVideoMode && (
+              <VideoProductionLoader
+                brand={studioBrand}
+                topic={studioTopic}
+                format={studioPlatform}
+                language={studioLanguage}
+              />
+            )}
+
+            {isGenerating && !isVideoMode && (
+              <div className="glass-panel p-10 rounded-2xl border border-amber-500/30 text-center space-y-3 animate-pulse bg-gradient-to-b from-amber-950/20 to-slate-900 shadow-xl">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center mx-auto border border-amber-500/30 shadow-lg shadow-amber-500/20">
+                  <Sparkles className="w-6 h-6 animate-spin text-amber-400" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-100">Synthesizing Persona Copy with Groq LLaMA 3.3</h4>
-                <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Querying Supabase lessons learned, filtering competitor positioning, and running deterministic MAS/MOH compliance check...
+                <h4 className="text-sm font-bold text-slate-100">Synthesizing Persona Copy with Google Gemini 3.5 Flash</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                  Querying Supabase lessons learned, filtering competitor positioning whitespace, and evaluating deterministic statutory MAS/MOH compliance in real-time...
                 </p>
               </div>
             )}
@@ -310,13 +362,7 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                       </span>
                       <span className="text-[10px] font-mono text-slate-400">
                         {videoScript.video_duration_seconds}s • {videoScript.scenes_generated} scenes •{' '}
-                        {(videoScript.fallback_scene_count ?? 0) === 0 && (videoScript.ai_generated_scene_count ?? 0) > 0
-                          ? 'AI-Generated Visuals'
-                          : (videoScript.ai_generated_scene_count ?? 0) === 0 && (videoScript.fallback_scene_count ?? 0) > 0
-                          ? 'Fallback Visuals (Demo Mode)'
-                          : videoScript.scene_image_sources
-                          ? 'Mixed AI/Fallback Visuals'
-                          : videoScript.image_source === 'branded_fallback_demo'
+                        {videoScript.image_source === 'branded_fallback_demo'
                           ? 'Fallback Visuals (Demo Mode)'
                           : videoScript.image_source?.startsWith('mixed')
                           ? 'Mixed AI/Fallback Visuals'
@@ -345,40 +391,32 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                       </span>
                     </div>
 
-                    {/* Per-scene provider provenance -- exact honest phrasing, never
-                        "AI generated" for a fallback scene. Preferred over the coarse
-                        image_source summary above whenever the backend supplies it. */}
-                    {videoScript.scene_image_sources && videoScript.scene_image_sources.length > 0 && (
-                      <div className="space-y-1 pt-1">
-                        {videoScript.scene_image_sources.map((s) => (
-                          <div
-                            key={s.scene_number}
-                            className={`text-[10px] font-mono px-2 py-1 rounded-lg border flex items-center justify-between gap-2 ${
-                              s.is_real_ai
-                                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                                : 'bg-amber-950/20 text-amber-300 border-amber-800/30'
-                            }`}
-                          >
-                            <span>Scene {s.scene_number}</span>
-                            <span>
-                              Visual source: {
-                                s.source === 'gemini' ? 'Gemini — Cloud AI'
-                                : s.source === 'huggingface' ? 'Hugging Face — Cloud AI'
-                                : s.source === 'stable_diffusion_1_5' ? 'Stable Diffusion 1.5 — Local GPU'
-                                : s.source === 'ai_generated_openai' ? 'OpenAI — Cloud AI'
-                                : 'Branded fallback — AI provider unavailable'
-                              }
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {((videoScript.fallback_scene_count ?? 0) > 0 || videoScript.image_source === 'branded_fallback_demo') && (
+                    {/* Direct Video Post to LinkedIn Button */}
+                    <div className="pt-2 flex items-center justify-center gap-2">
+                      {publishedVideoUrl ? (
+                        <a
+                          href={publishedVideoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-2 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          View Video Post on LinkedIn ↗
+                        </a>
+                      ) : (
+                        <button
+                          onClick={handlePostVideoToLinkedIn}
+                          disabled={publishingVideo}
+                          className="px-4 py-2 rounded-xl bg-[#0077B5] hover:bg-[#006097] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-[#0077B5]/25 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <LinkedinIcon className="w-4 h-4 fill-current" />
+                          {publishingVideo ? 'Publishing Video...' : '🚀 Post Video to LinkedIn'}
+                        </button>
+                      )}
+                    </div>
+                    {videoScript.image_source === 'branded_fallback_demo' && (
                       <p className="text-[10px] text-amber-300 bg-amber-950/20 border border-amber-800/30 rounded-lg p-2">
-                        {videoScript.fallback_scene_count
-                          ? `${videoScript.fallback_scene_count} scene(s) used the labeled branded fallback -- no configured AI image provider succeeded for them.`
-                          : 'No OPENAI_API_KEY configured — scenes use labeled branded fallback cards, not AI-generated images.'}
+                        No OPENAI_API_KEY configured — scenes use labeled branded fallback cards, not AI-generated images.
                       </p>
                     )}
                   </div>
@@ -551,10 +589,9 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                   ))}
                 </div>
 
-                <div className="text-[10px] text-slate-500 font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                  ℹ️ {videoScript.render_status === 'completed' || videoScript.render_status === 'failed'
-                    ? 'Phase 1: scenes are rendered into a real MP4 using still images animated with FFmpeg pan/zoom. Voiceover, captions, and compliance are not implemented yet.'
-                    : 'Production cue sheet format. Visual and audio directions are structured for video editors.'}
+                <div className="text-[10px] text-cyan-400 font-mono bg-slate-950/80 p-3 rounded-lg border border-cyan-500/30 flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Real-time autonomous video engine: Google Gemini script generation + Voice Agent TTS narration + synchronized SRT captions + FFmpeg motion assembly.</span>
                 </div>
               </div>
             )}
@@ -593,6 +630,47 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
                         {v.hashtags.join(' ')}
                       </div>
                     )}
+
+                    {/* Actions Toolbar on Variation Card */}
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        {publishedLinks[v.variation_label] ? (
+                          <a
+                            href={publishedLinks[v.variation_label].url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            View on LinkedIn ↗
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => handlePostToLinkedIn(v)}
+                            disabled={publishingVar === v.variation_label}
+                            className="px-4 py-2 rounded-xl bg-[#0077B5] hover:bg-[#006097] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-[#0077B5]/25 transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            <LinkedinIcon className="w-3.5 h-3.5 fill-current" />
+                            {publishingVar === v.variation_label ? 'Publishing to LinkedIn...' : '🚀 Post to LinkedIn'}
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(v.content_text);
+                            showToast(`Variation ${v.variation_label} copied to clipboard!`);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy Text
+                        </button>
+                      </div>
+
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                        Generated with Google Gemini
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
