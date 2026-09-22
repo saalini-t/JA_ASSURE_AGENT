@@ -10,7 +10,7 @@ class MediaService:
     Video/Reels Storyboard and Visual Pipeline Service.
     Produces 30-60 second structured AI storyboards with scene-by-scene visual cues,
     voiceover text, on-screen typography, transitions, and mandatory compliance disclaimers.
-    Uses Groq structured output when live, with domain-accurate deterministic fallback.
+    Uses Gemini structured output when live, with domain-accurate deterministic fallback.
     """
 
     async def generate_video_script(
@@ -102,8 +102,8 @@ class MediaService:
                 script.target_platform = platform_clean
                 script.language = lang_clean
                 script.media_status = "ai_storyboard_generated"
-                if not script.scenes or not isinstance(script.scenes[0], VideoScene):
-                    raise ValueError("Structured LLM output did not contain valid VideoScene instances. Triggering deterministic fallback.")
+                if not script.scenes or len(script.scenes) < 3 or not isinstance(script.scenes[0], VideoScene):
+                    raise ValueError("Structured LLM output did not contain at least 3 valid VideoScene instances. Triggering deterministic fallback.")
                 if not script.title:
                     script.title = f"AI Storyboard: {topic[:50]}"
                 if not script.concept:
@@ -117,10 +117,10 @@ class MediaService:
                 if script.scenes and hasattr(script.scenes[0], 'duration_seconds'):
                     script.target_duration_seconds = sum(getattr(s, 'duration_seconds', 10) for s in script.scenes)
 
-                logger.info(f"Successfully generated AI video storyboard with Groq for {brand_clean}: '{script.title}'")
+                logger.info(f"Successfully generated AI video storyboard with Gemini for {brand_clean}: '{script.title}'")
                 return script
             except Exception as e:
-                logger.error(f"Groq video storyboard generation failed: {e}. Using deterministic fallback.")
+                logger.error(f"Gemini video storyboard generation failed: {e}. Using deterministic fallback.")
 
         # 2. DETERMINISTIC FALLBACK GENERATION (Offline / Resilient)
         return self._generate_deterministic_video_script(

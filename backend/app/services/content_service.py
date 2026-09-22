@@ -152,11 +152,24 @@ class ContentService:
             ("B", "Data-driven, financial risk mitigation, sub-limit analysis, and ROI-oriented")
         ]
 
+        lang_clean = (brief.language or "en").lower().strip()
+        from app.services.localization_service import LANGUAGE_PROMPTS, localization_service
+        lang_meta = LANGUAGE_PROMPTS.get(lang_clean, {"name": "English", "guidance": "Standard Singapore / International English with clear professional tone."})
+
+        lang_directive = ""
+        if lang_clean != "en":
+            lang_directive = (
+                f"TARGET REGIONAL LANGUAGE: {lang_meta['name']}\n"
+                f"LOCALIZATION & REGULATORY GUIDELINES: {lang_meta['guidance']}\n"
+                f"IMPORTANT: Write the entire post, headline, and call-to-action in {lang_meta['name']} using compliant regional insurance terms.\n\n"
+            )
+
         for label, angle_desc in angles:
             prompt = (
                 f"Draft marketing copy for brand '{brand_clean}' on platform '{platform_clean}'.\n"
                 f"Variation: {label} ({angle_desc})\n"
                 f"Topic: {brief.topic}\n"
+                f"{lang_directive}"
                 f"Key Benefits: {', '.join(brief.key_benefits) if brief.key_benefits else 'Comprehensive bespoke coverage'}\n"
                 f"Target Persona: {brief.target_persona or 'High-value client / Specialist director'}\n"
                 f"Brand Voice Directives:\n{persona['voice_directives']}\n\n"
@@ -165,7 +178,7 @@ class ContentService:
                 f"MANDATORY DISCLAIMER TO INCLUDE AT END:\n{persona['disclaimer']}\n"
             )
             system_prompt = (
-                f"You are the Lead Marketing Director for {persona['title']}. "
+                f"You are the Lead Marketing Director for {persona['title']} fluent in {lang_meta['name']}. "
                 f"Adhere strictly to {platform_clean} best practices ({plat_spec['style']})."
             )
 
@@ -189,6 +202,10 @@ class ContentService:
                     persona=persona,
                     plat_spec=plat_spec
                 )
+                if lang_clean != "en":
+                    fallback_var.content_text = localization_service._get_deterministic_localized_copy(
+                        fallback_var.content_text, lang_clean, brand_clean
+                    )
                 variations.append(fallback_var)
 
         return variations
