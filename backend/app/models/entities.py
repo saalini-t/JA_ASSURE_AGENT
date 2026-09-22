@@ -274,3 +274,51 @@ class ReviewDecision(Base):
     __table_args__ = (
         Index("ix_review_decisions_asset", "asset_type", "asset_id"),
     )
+
+
+class Complaint(Base):
+    """
+    Customer and policyholder complaint model (Abhi Ram's contribution).
+    Captures user/customer complaint input, stores it in SQLite, and routes it
+    for review and resolution, strictly separated from the marketing content pipeline.
+
+    Status follows the content queue's pending -> approved lifecycle pattern:
+    pending -> under_review -> routed -> actioned -> resolved (or rejected).
+    """
+    __tablename__ = "complaints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    complaint_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False) # e.g. CMP-2026-XXXX
+    customer_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    customer_email: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
+    customer_phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    brand: Mapped[str] = mapped_column(String(50), index=True, nullable=False) # jade, doctorshield, jaguartransit
+    category: Mapped[str] = mapped_column(String(50), index=True, nullable=False) # policy_coverage, claims_denial, billing_dispute, customer_service, compliance_misleading, technical_issue, other
+    priority: Mapped[str] = mapped_column(String(20), default="medium", index=True) # low, medium, high, urgent
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Status lifecycle: pending -> under_review -> routed -> actioned -> resolved (or rejected)
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
+
+    # Routing destinations: underwriting_team, claims_desk, compliance_legal, billing_support, executive_escalations, customer_relations
+    routed_to: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    routing_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    routed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Review & action fields
+    assigned_reviewer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    response_draft: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resolution_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actioned_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    actioned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        Index("ix_complaints_brand_status", "brand", "status"),
+        Index("ix_complaints_routed_status", "routed_to", "status"),
+    )
+
