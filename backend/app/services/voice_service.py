@@ -180,7 +180,10 @@ class VoiceService:
         for scene in ordered_scenes:
             vo_text = (scene.voiceover or "").strip()
             if vo_text:
-                segments.append(vo_text)
+                from app.services.voice_agent import clean_voiceover_text
+                cleaned = clean_voiceover_text(vo_text)
+                if cleaned:
+                    segments.append(cleaned)
 
         combined = " ".join(segments).strip()
         if not combined:
@@ -238,7 +241,8 @@ class VoiceService:
         """
         Directly synthesize an arbitrary string of text to a secure MP3 file.
         """
-        cleaned_text = text.strip()
+        from app.services.voice_agent import clean_voiceover_text
+        cleaned_text = clean_voiceover_text(text)
         if not cleaned_text:
             raise VoiceEmptyError("Cannot synthesize empty text string.")
 
