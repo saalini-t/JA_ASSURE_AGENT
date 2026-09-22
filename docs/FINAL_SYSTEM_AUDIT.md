@@ -172,6 +172,36 @@ here rather than hidden.
      `test_real_lead_discovery_integration.py`), all mocked at the
      `httpx.Client` level — no real network calls, no API keys required to
      run them.
+9. **New capability, merged from a second reference project, with one
+   deliberate exclusion**: a second local project (`ut7ut/backend`, same
+   fictional company, a more advanced/agentic build) was investigated when
+   asked to "switch to Veo3/Gemini" and unify image/video/voice/caption
+   generation into one sequential flow. Findings: it does **not** actually
+   use Veo3 anywhere (grepped — zero real references); its image cascade
+   (`GeminiAndFluxImageProvider`) is simpler than this project's existing
+   4-tier cascade (no local SD1.5 tier). Its genuinely valuable idea was a
+   `MediaDecisionEngine` that unifies "generate content → decide image or
+   video → generate it" into one call instead of separate manual steps —
+   ported and rebuilt as `app/services/media_decision_engine.py` against
+   this project's own (superior) image cascade and video pipeline, exposed
+   as `POST /content/campaign`.
+   - **Explicitly NOT ported**: that project's `auto_approval_node`
+     (`agentic/graph.py`), which sets `approved_by="SYSTEM"`,
+     `human_approved=False`, and flips status straight to `"approved"`
+     whenever compliance score ≥ 80, then immediately auto-publishes to
+     LinkedIn. This directly contradicts this project's foundational,
+     repeatedly-stated, and previously live-tested rule that nothing
+     publishes without a real human approval. Flagged explicitly to the
+     user before writing any code; the user confirmed keeping human
+     approval mandatory. `/content/campaign` lands every item in
+     `human_review` (or `pending` if compliance flagged it) exactly like
+     every other path into the queue — confirmed by a dedicated test,
+     `test_campaign_never_auto_approves_even_when_compliance_passes`.
+   - Live-verified on the real running backend (real Postgres, real Groq):
+     a real campaign call produced real content plus a real SD1.5-generated
+     image in one request, landed in `human_review`. 6 new tests, all
+     media-generation calls mocked (no real GPU/network time in the test
+     suite itself).
 
 ---
 

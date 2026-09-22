@@ -66,6 +66,7 @@ GET  /competitors/digest
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/content/generate` | A/B copy variations for one brief |
+| POST | `/content/campaign` | **One sequential call**: content generation → (optionally) real image/video generation → compliance → `ContentQueue`, replacing separate `/content/generate` + `/content/video` + `/content/video/enqueue` calls. Still lands in `human_review` — never auto-approved. |
 | POST | `/content/suite` | Full multi-platform/language run → creates `ContentQueue` rows in `human_review` |
 | POST | `/content/video` | Generate a video storyboard, optionally rendering a real MP4 |
 | POST | `/content/video/enqueue` | Take a rendered `VideoScript` into the governed `ContentQueue` |

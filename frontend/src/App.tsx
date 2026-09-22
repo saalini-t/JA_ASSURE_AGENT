@@ -315,6 +315,32 @@ export function App() {
     }
   };
 
+  // One click: content + real media (image or video) generated together in
+  // a single sequential backend call, landing in human_review -- never
+  // auto-approved or auto-published.
+  const handleRunFullCampaign = async () => {
+    setActionLoading('campaign');
+    try {
+      const isVideo = studioPlatform === 'reel' || studioPlatform === 'video';
+      await api.runSequentialCampaign({
+        brand: studioBrand,
+        topic: studioTopic,
+        platform: studioPlatform,
+        language: studioLanguage,
+        include_media: true,
+        media_format: isVideo ? 'video' : 'image',
+        target_duration: 45,
+      });
+      showToast(`✓ Campaign ready: content + ${isVideo ? 'video' : 'image'} generated in one pass, staged for Human Review.`);
+      fetchAllData();
+      setActiveTab('review');
+    } catch (err: any) {
+      alert(`Campaign error: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Competitor Analysis & Scraper
   const handleScrape = async () => {
     if (!scrapeUrlInput) return;
@@ -555,6 +581,7 @@ export function App() {
               actionLoading={actionLoading}
               onGenerateVariations={handleGenerateVariations}
               onLaunchFullSuite={handleLaunchFullSuite}
+              onRunFullCampaign={handleRunFullCampaign}
               showToast={showToast}
               lessons={lessons}
               competitors={competitors}

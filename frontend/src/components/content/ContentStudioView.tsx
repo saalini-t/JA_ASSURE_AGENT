@@ -30,6 +30,7 @@ interface ContentStudioViewProps {
   actionLoading: string | null;
   onGenerateVariations: () => void;
   onLaunchFullSuite: () => void;
+  onRunFullCampaign: () => void;
   showToast: (msg: string) => void;
   lessons: LessonLearned[];
   competitors: Competitor[];
@@ -49,6 +50,7 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
   actionLoading,
   onGenerateVariations,
   onLaunchFullSuite,
+  onRunFullCampaign,
   showToast,
   lessons,
   competitors
@@ -84,6 +86,7 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
 
   const isGenerating = actionLoading === 'generating';
   const isExecutingSuite = actionLoading === 'suite';
+  const isRunningCampaign = actionLoading === 'campaign';
   const isVideoMode = studioPlatform === 'reel' || studioPlatform === 'video';
 
   // Count relevant active lessons for this brand
@@ -178,11 +181,23 @@ export const ContentStudioView: React.FC<ContentStudioViewProps> = ({
 
               <button
                 onClick={onLaunchFullSuite}
-                disabled={isGenerating || isExecutingSuite}
+                disabled={isGenerating || isExecutingSuite || isRunningCampaign}
                 className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5 text-cyan-400" />
                 {isExecutingSuite ? 'Executing Full Brain Suite...' : 'Execute Full Pipeline Suite'}
+              </button>
+
+              <button
+                onClick={onRunFullCampaign}
+                disabled={isGenerating || isExecutingSuite || isRunningCampaign}
+                title="One sequential call: writes the copy AND generates its real image/video together, instead of separate steps"
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                {isRunningCampaign
+                  ? (isVideoMode ? 'Running Campaign (Video)...' : 'Running Campaign (Image)...')
+                  : `Run Full Campaign (Content + ${isVideoMode ? 'Video' : 'Image'}, One Click)`}
               </button>
             </div>
           </div>

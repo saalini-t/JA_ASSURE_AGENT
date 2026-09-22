@@ -148,6 +148,31 @@ export const api = {
     return handleResponse<ContentQueueItem[]>(res);
   },
 
+  // One sequential call: content generation -> (optionally) real image/video
+  // generation -> compliance -> ContentQueue -- replaces manually chaining
+  // generateVariations/generateVideoScript + a separate enqueue call.
+  // Always lands in human_review, never auto-approved.
+  runSequentialCampaign: async (payload: {
+    brand: string;
+    topic: string;
+    platform?: string;
+    content_type?: string;
+    language?: string;
+    key_benefits?: string[];
+    target_persona?: string;
+    cta?: string;
+    include_media?: boolean;
+    media_format?: 'video' | 'image' | 'auto';
+    target_duration?: number;
+  }): Promise<ContentQueueItem> => {
+    const res = await fetch(`${API_BASE_URL}/content/campaign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<ContentQueueItem>(res);
+  },
+
   generateVideoScript: async (payload: {
     brand: string;
     topic: string;

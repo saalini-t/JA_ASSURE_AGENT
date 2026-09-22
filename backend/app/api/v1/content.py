@@ -75,6 +75,41 @@ async def generate_content_variations(req: SingleContentRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
 
+class SequentialCampaignRequest(BaseModel):
+    brand: str = "jade"
+    topic: str = "Protecting bespoke jewellery collections"
+    platform: str = "linkedin"
+    content_type: str = "post"
+    language: str = "en"
+    key_benefits: Optional[List[str]] = None
+    target_persona: Optional[str] = None
+    cta: Optional[str] = None
+    include_media: bool = False
+    media_format: str = "auto"  # "video" | "image" | "auto"
+    target_duration: int = 45
+
+@router.post("/campaign", response_model=ContentQueueResponse, status_code=201)
+async def run_sequential_campaign(req: SequentialCampaignRequest):
+    """
+    One call, one sequential pipeline: content generation -> (optionally) real
+    image/video generation -> compliance -> ContentQueue -- instead of
+    separately calling /content/generate (or /suite), /content/video, and
+    /content/video/enqueue by hand. Always lands in human_review (or
+    'pending' if compliance flagged it) -- never auto-approved, never
+    auto-published, exactly like every other path into the queue.
+    """
+    try:
+        item = await pipeline_service.run_sequential_campaign(
+            brand=req.brand, topic=req.topic, platform=req.platform,
+            content_type=req.content_type, language=req.language,
+            key_benefits=req.key_benefits, target_persona=req.target_persona, cta=req.cta,
+            include_media=req.include_media, media_format=req.media_format,
+            target_duration=req.target_duration,
+        )
+        return item
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sequential campaign failed: {str(e)}")
+
 @router.post("/suite", response_model=List[ContentQueueResponse])
 async def generate_content_suite(suite_req: ContentSuiteRequest):
     """
