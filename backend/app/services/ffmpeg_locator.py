@@ -104,6 +104,17 @@ def _windows_install_candidates(filename: str) -> List[str]:
     return matches
 
 
+def _get_imageio_ffmpeg_exe() -> Optional[str]:
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if _is_executable_file(exe):
+            return exe
+    except Exception:
+        pass
+    return None
+
+
 def _resolve(base_name: str) -> str:
     env_var = f"{base_name.upper()}_PATH"
     checked: List[str] = []
@@ -123,7 +134,14 @@ def _resolve(base_name: str) -> str:
     if which_result and _is_executable_file(which_result):
         return str(Path(which_result).resolve())
 
-    # 3. Windows-only fallback: known install locations, globbed (no hard-coded paths)
+    # 3. imageio_ffmpeg package lookup (for ffmpeg)
+    if base_name == "ffmpeg":
+        imgio_exe = _get_imageio_ffmpeg_exe()
+        if imgio_exe:
+            checked.append(f"imageio_ffmpeg: {imgio_exe}")
+            return str(Path(imgio_exe).resolve())
+
+    # 4. Windows-only fallback: known install locations, globbed (no hard-coded paths)
     filename = _binary_filename(base_name)
     for candidate in _windows_install_candidates(filename):
         checked.append(candidate)
@@ -143,3 +161,5 @@ def resolve_ffprobe() -> str:
     path = _resolve("ffprobe")
     logger.info(f"FFprobe: {path}")
     return path
+
+
